@@ -244,7 +244,7 @@ checkIfWhite(e_hat);
 
 %% Predict WRONG TAKE CARE OF LOG AND LINEAR
 ks = [1 7];
-
+naive_vals = {};
 for i=1:2
     t_predict = cat(1,model_t, validation_t);
     y = cat(1, model_nvdi, validation_nvdi);
@@ -262,6 +262,7 @@ for i=1:2
 
         y_naive = y_naive(length(model_t)+1:end);
         ehat_naive = ehat_naive(length(model_t)+1:length(t_predict));
+        naive_vals{1} = [y_naive' ehat_naive];
         %throw = k + 20;
         %ehat_naive = ehat_naive(throw:length(ehat_naive));
     else
@@ -277,6 +278,8 @@ for i=1:2
 
         y_naive = y_naive(length(model_t)+1:end);
         ehat_naive = ehat_naive(length(model_t)+1:length(t_predict));
+        naive_vals{7} = [y_naive' ehat_naive];
+
         %throw = k + 30;
         %ehat_naive = ehat_naive(throw:length(ehat_naive));
     end
@@ -473,38 +476,44 @@ title ('Cross_correlation_function'), xlabel('Lag')
 hold on
 plot(-M:M, 2/ sqrt(n) * ones(1, 2*M+1), '--')
 plot(-M:M, -2/sqrt(n) * ones(1, 2*M+1) , '--' )
-hold off
+hold off_
 %%
-k = 7;
+k = 1;
 idx_rain_nvdival = find(tt==nvdi_t(1)) + length(model_nvdi): find(tt==nvdi_t(1)) + length(model_nvdi) + length(validation_nvdi) - 1;
 x_val = log(rain_reconstructed(idx_rain_nvdival) + 1);
 x_model_val = cat(1, x, x_val);
 
 t_predict = cat(1,model_t, validation_t);
 y = cat(1, model_nvdi, validation_nvdi);
+y_val = y(length(model_nvdi)+1:end);
 y_trend = y - (t_predict.*slope + intercept);
+
 
 [Fx, Gx] = polydiv( inputModel.C, inputModel.A, k );
 xhatk = filter(Gx, inputModel.C, x_model_val);
 
 xhatk_val = xhatk(length(model_nvdi)+1: end);
+ehat_val = x_val - xhatk_val;
+t_predict_val = t_predict(length(model_nvdi)+1: end);
 %modelLim = 400
-figure
-plot([x_val xhatk_val] )
-%line( [modelLim modelLim], [-1e6 1e6 ], 'Color','red','LineStyle',':' )
-legend('Input signal', 'Predicted input', 'Prediction starts')
-title( sprintf('Predicted input signal, x_{t+%i|t}', k) )
-axis([1 N min(x)*1.5 max(x)*1.5])
+figure()
+subplot(211)
+plot(t_predict_val, xhatk_val)
+hold on
+plot(t_predict_val, x_val)
+legend('xhatk', 'c')
+subplot(212)
+plot(t_predict_val, ehat_val);
+legend('ehat')
 
 std_xk = sqrt( sum( Fx.^2 )*var_ex );
 fprintf( 'The theoretical std of the %i-step prediction error is %4.2f.\n', k, std_xk)
 
 %% Form the residual. Is it behaving as expected? Recall, no shift here!
-ehat = x_val - xhatk_val;
 %ehat = ehat(30:end);
 
 figure
-acf( ehat, 40, 0.05, 1 );
+acf( ehatval, 40, 0.05, 1 );
 title( sprintf('ACF of the %i-step input prediction residual', k) )
 fprintf('This is a %i-step prediction. Ideally, the residual should be an MA(%i) process.\n', k, k-1)
 checkIfWhite( ehat );
@@ -536,14 +545,26 @@ KC = conv( MboxJ.F, MboxJ.C );
 % Form the predicted output signal using the predicted input signal.
 yhatk  = filter(Fhh, 1, xhatk) + filter(Ghh, KC, x_model_val) + filter(Gy, KC, y_trend);
 
+yhatk_val = yhatk(length(model_nvdi)+1:end) + (slope.*t_predict_val + intercept);
+ehat_val = y_val - yhatk_val;
+
 % A very common error is to forget to add the predicted inputs. Lets try
 % that to see what happens.
 % yhatk  = filter(Ghh, KC, x) + filter(Gy, KC, y);
-
-figure
-plot([y_trend yhatk] )
+naive = naive_vals{k};
+figure()
+subplot(211)
+plot(t_predict_val, y_val)
+hold on
+plot(t_predict_val, yhatk_val)
+hold on
+plot(t_predict_val, naive(:,1))
+legend('y', 'yhatk', 'naive')
+subplot(212)
+plot(t_predict_val, ehat_val);
+hold on
+plot(t_predict_val, naive(:,2))
+legend('ehat', 'ehat naive')
 %line( [modelLim modelLim], [-1e6 1e6 ], 'Color','red','LineStyle',':' )
-legend('Output signal', 'Predicted output', 'Prediction starts')
-title( sprintf('Predicted output signal, y_{t+%i|t}', k) )
-axis([1 N min(y_trend)*1.5 max(y_trend)*1.5])
+
 
