@@ -476,9 +476,9 @@ title ('Cross_correlation_function'), xlabel('Lag')
 hold on
 plot(-M:M, 2/ sqrt(n) * ones(1, 2*M+1), '--')
 plot(-M:M, -2/sqrt(n) * ones(1, 2*M+1) , '--' )
-hold off_
+hold off
 %%
-k = 1;
+k = 7;
 idx_rain_nvdival = find(tt==nvdi_t(1)) + length(model_nvdi): find(tt==nvdi_t(1)) + length(model_nvdi) + length(validation_nvdi) - 1;
 x_val = log(rain_reconstructed(idx_rain_nvdival) + 1);
 x_model_val = cat(1, x, x_val);
@@ -513,11 +513,11 @@ fprintf( 'The theoretical std of the %i-step prediction error is %4.2f.\n', k, s
 %ehat = ehat(30:end);
 
 figure
-acf( ehatval, 40, 0.05, 1 );
+acf( ehat_val, 40, 0.05, 1 );
 title( sprintf('ACF of the %i-step input prediction residual', k) )
 fprintf('This is a %i-step prediction. Ideally, the residual should be an MA(%i) process.\n', k, k-1)
-checkIfWhite( ehat );
-pacfEst = pacf( ehat, 40, 0.05 );
+checkIfWhite( ehat_val );
+pacfEst = pacf( ehat_val, 40, 0.05 );
 checkIfNormal( pacfEst(k+1:end), 'PACF' );
 
 %% Proceed to predict the data using the predicted input.
