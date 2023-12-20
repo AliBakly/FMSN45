@@ -349,7 +349,7 @@ hold on
 plot(-M:M, 2/ sqrt(n) * ones(1, 2*M+1), '--')
 plot(-M:M, -2/sqrt(n) * ones(1, 2*M+1) , '--' )
 hold off
-d=3; r=0; s=1; 
+d=3; r=0; s=0; 
 %%
 A2 = ones(1, r+1);
 B = [zeros(1,d) ones(1, s+1)];
@@ -423,7 +423,7 @@ plot(-M:M, 2/ sqrt(n) * ones(1, 2*M+1), '--')
 plot(-M:M, -2/sqrt(n) * ones(1, 2*M+1) , '--' )
 hold off
 %%
-k = 1;
+k = 7;
 x = rain_reconstructed(find(tt==nvdi_t(1)) + length(model_nvdi): find(tt==nvdi_t(1)) + length(model_nvdi) + length(validation_nvdi) - 1);
 y = validation_nvdi;
 [Fx, Gx] = polydiv( inputModel.C, inputModel.A, k );
