@@ -9,17 +9,47 @@ plot(ElGeneina.rain_org_t, ElGeneina.rain_org)
 hold on
 plot(ElGeneina.rain_org_t, ElGeneina.rain_org, '*', 'Color', 'r')
 rain = ElGeneina.rain_org;
-y = rain;
-N = length(rain);
+% y = rain;
+% N = length(rain);
+% rain_init = zeros(3,N);
+% rain_init(1,:) = rain./3;  
+% rain_init(2,:) = rain./3;
+% rain_init(3,:) = rain./3;
+%%
+len = length(ElGeneina.nvdi);
+idx_model_nvdi = 1:round(0.7*len);
+idx_validation_nvdi = round(0.7*len) + 1 : round(0.9*len);
+idx_test_nvdi = round(0.9*len + 1 : len);
+tt = ElGeneina.nvdi_t;
+
+last_t = tt(length(idx_model_nvdi));
+last_rain_rec = find(last_t - ElGeneina.rain_org_t < 0 & last_t - ElGeneina.rain_org_t > -0.05);
+
+y = ElGeneina.rain_org(1:last_rain_rec);
+N = length(y);
 rain_init = zeros(3,N);
-rain_init(1,:) = rain./3;  
-rain_init(2,:) = rain./3;
-rain_init(3,:) = rain./3;
+rain_init(1,:) = y./3;  
+rain_init(2,:) = y./3;
+rain_init(3,:) = y./3;
+
+%find(tt==nvdi_t(1)) + length(model_nvdi): find(tt==nvdi_t(1)) + length(model_nvdi) + length(validation_nvdi) - 1) + 1);
+
+%idx_model_rain = 1:round(0.7*len);
+%idx_validation_nvdi = round(0.7*len) + 1 : round(0.9*len);
+%idx_test_nvdi = round(0.9*len + 1 : end);
 %% Estimating parameters with Kalman Filter
 windowsize = 20;
 a1 = -0.4; % Intial AR param estimate
 
-for i = 1:20 % Update Ar 20 time
+for i = 1:21 % Update Ar 20 time
+    if(i == 21)
+        y = ElGeneina.rain_org(1:end);
+        N = length(y);
+        rain_init = zeros(3,N);
+        rain_init(1,:) = y./3;  
+        rain_init(2,:) = y./3;
+        rain_init(3,:) = y./3;
+    end
     A =[-a1 0 0;1 0 0; 0 1 0];
     at = zeros(N,1);
     Rw    = 10e-3;                                      % Measurement noise covariance matrix, R_w. Note that Rw has the same dimension as Ry.
@@ -51,7 +81,7 @@ for i = 1:20 % Update Ar 20 time
             scale_factor = target_sum / sum(new_data);
             xt(:,t) = new_data * scale_factor;
         end
-        
+
         % Update the covariance matrix estimates.
         Rx_t  = Rx_t1 - Kt*Ry*Kt';                  % R^{x,x}_{t|t} = R^{x,x}_{t|t-1} - K_t R_{t|t-1}^{y,y} K_t^T
         Rx_t1 = A*Rx_t*A' + Re;                     % R^{x,x}_{t+1|t} = A R^{x,x}_{t|t} A^T + Re
@@ -133,13 +163,24 @@ plot(nvdi_t, nvdi)
 plotACFnPACF(nvdi, 40, 'data');
 figure; 
 lambda_max = bcNormPlot(nvdi,1);
+%%
+model_t = nvdi_t(idx_model_nvdi);
+validation_t = nvdi_t(idx_validation_nvdi);
+test_t = nvdi_t(idx_test_nvdi);
+
+model_nvdi = nvdi(idx_model_nvdi);
+validation_nvdi = nvdi(idx_validation_nvdi);
+test_nvdi = nvdi(idx_test_nvdi);
 %% Remove deterministic trend WRONG ONLY ON MODEL DATA
-mdl = fitlm(nvdi_t, nvdi);
-m= mdl.Coefficients(1,1).Estimate;
-k= mdl.Coefficients(2,1).Estimate;
-nvdi_trend = nvdi- (nvdi_t.*k +m);
 figure();
-plot(nvdi_t, nvdi_trend)
+plot(model_t, model_nvdi)
+
+mdl = fitlm(model_t, model_nvdi)
+intercept = mdl.Coefficients(1,1).Estimate;
+slope = mdl.Coefficients(2,1).Estimate;
+nvdi_trend = model_nvdi- (model_t.*slope + intercept);
+figure();
+plot(model_t, nvdi_trend)
 plotACFnPACF(nvdi_trend, 40, 'data');
 figure; 
 lambda_max = bcNormPlot(nvdi_trend,1);
@@ -153,17 +194,6 @@ lambda_max = bcNormPlot(nvdi_trend,1);
 % plotACFnPACF(nvdi_season, 40, 'data');
 % figure; 
 % lambda_max = bcNormPlot(nvdi_season,1);
-%% Split data 70-20-10
-figure();
-plot(nvdi_t, nvdi_trend)
-
-model_t = nvdi_t(1:round(0.7*length(nvdi_trend)));
-validation_t = nvdi_t(round(0.7*length(nvdi_trend)) + 1 : round(0.9*length(nvdi_trend)));
-test_t = nvdi_t(round(0.9*length(nvdi_trend)) + 1:end);
-
-model_nvdi = nvdi_trend(1:round(0.7*length(nvdi_trend)));
-validation_nvdi = nvdi_trend(round(0.7*length(nvdi_trend)) + 1 : round(0.9*length(nvdi_trend)));
-test_nvdi = nvdi_trend(round(0.9*length(nvdi_trend)) + 1:end);
 %% Ar(1) 
 plotACFnPACF(model_nvdi, 45, 'AR(1)' );
 data = iddata(model_nvdi);
@@ -213,21 +243,27 @@ checkIfNormal(pacfEst(2:end), 'PACF' );
 checkIfWhite(e_hat);
 
 %% Predict WRONG TAKE CARE OF LOG AND LINEAR
-y = validation_nvdi;
-t_predict = validation_t;
-A = model_armax_1.A;
-C = model_armax_1.C;
 ks = [1 7];
 
 for i=1:2
-    
+    t_predict = cat(1,model_t, validation_t);
+    y = cat(1, model_nvdi, validation_nvdi);
+    y_trend = y - (t_predict.*slope + intercept);
+    A = model_armax_1.A;
+    C = model_armax_1.C;
+
     k = ks(i);
     if(i == 1)
         y_naive = zeros(1, length(y) +1 );
         y_naive(2: end) = y;
         y_naive = y_naive(1:end - 1);
-        ehat_naive = y-y_naive;
-        ehat_naive = ehat_naive(k + 20:length(ehat_naive));
+        
+        ehat_naive = y-y_naive';
+
+        y_naive = y_naive(length(model_t)+1:end);
+        ehat_naive = ehat_naive(length(model_t)+1:length(t_predict));
+        %throw = k + 20;
+        %ehat_naive = ehat_naive(throw:length(ehat_naive));
     else
         % y_naive = zeros(1, length(y) + 7 );
         % y_naive(8: end) = y;
@@ -237,18 +273,28 @@ for i=1:2
         y_naive = zeros(1, length(y) + 36 );
         y_naive(37: end) = y;
         y_naive = y_naive(1:end - 36);
-        ehat_naive = y-y_naive;
-        ehat_naive = ehat_naive(k + 30:length(ehat_naive));
+        ehat_naive = y-y_naive';
+
+        y_naive = y_naive(length(model_t)+1:end);
+        ehat_naive = ehat_naive(length(model_t)+1:length(t_predict));
+        %throw = k + 30;
+        %ehat_naive = ehat_naive(throw:length(ehat_naive));
     end
 
     [Fk, Gk] = polydiv(C, A, k) ;
-    yhatk = filter(Gk, C, y) ;
+    yhatk = filter(Gk, C, y_trend) ;
+    yhatk = yhatk + (t_predict.*slope + intercept);
+
     ehat = y-yhatk;
-    ehat = ehat(k+20:end);  % Remove the corrupted samples. You might need to add a bit of a margin.
+
+    yhatk = yhatk(length(model_t)+1:end);
+    ehat = ehat(length(model_t)+1:end);
+    %ehat = ehat(throw:end);  % Remove the corrupted samples. You might need to add a bit of a margin.
 
     %ehat_naive = ehat_naive(k+20:end);
     %length(ehat_naive)
-
+    t_predict = t_predict(length(model_t)+1:end);
+    y = y(length(model_t)+1:end);
     figure()
     subplot(211)
     plot(t_predict,y)
@@ -262,9 +308,9 @@ for i=1:2
     % Form the prediction error and examine the ACF. Note that the prediction
     % residual should only be white if k=1. 
     subplot(212)
-    plot(ehat)
+    plot(t_predict, ehat)
     hold on
-    plot(ehat_naive)
+    plot(t_predict, ehat_naive)
     legend('ehat = y-yhatk', 'naive')
     plotACFnPACF(ehat, 40, append(int2str(k), '-step prediction'));
     if(i == 1)
@@ -280,11 +326,11 @@ end
 %% Examine the data.
 figure; 
 subplot(211); 
-
-x = rain_reconstructed(find(tt==nvdi_t(1)): find(tt==nvdi_t(1)) + length(model_nvdi) - 1);
+idx_rain_nvdimodel_dates = find(tt==nvdi_t(1)): find(tt==nvdi_t(1)) + length(nvdi_trend) - 1;
+x = rain_reconstructed(idx_rain_nvdimodel_dates);
 %x = x./max(x); % RESCALING.
-y = model_nvdi; 
-%x = log(x+1);
+y = nvdi_trend; 
+x = log(x+1);
 %x = x;
 %x = ((max(model_nvdi) - min(model_nvdi)).*(x - min(x)))./(max(x)-min(x)) + min(model_nvdi);
 plot(x); % manual inspection
@@ -316,10 +362,10 @@ plotACFnPACF(x, 50, 'Input Data' );
 % Model as ARMA(1,2) component
 data = iddata(x);
 Am = conv([1 1 1], [1 zeros(1, 35) 1]);%[1 1 1 zeros(1, 33) 1];
-Cm = [1 0 0 1];
+Cm =[];%Cm = [1 0 0 1];
 model_init = idpoly(Am, [], Cm) ;
 model_init.Structure.a.Free = Am;
-model_init.Structure.c.Free = Cm;
+%model_init.Structure.c.Free = Cm;
 
 inputModel = pem(data , model_init);
 
@@ -352,8 +398,14 @@ hold off
 d=3; r=0; s=0; 
 %%
 A2 = ones(1, r+1);
-B = [zeros(1,d) ones(1, s+1)];
-B = [0 0 0 1 1 zeros(1,31) 1 ];
+%B = [zeros(1,3) ones(1, s+1)];
+%B = [0 0 0 1 0 0 1 1 1 zeros(1,22) 1 1 1 ];
+
+idx = [3 5 7 25 32 36];
+arr = zeros(1, idx(end) +1);
+arr(idx +1 ) = 1;
+B = arr;
+
 Mi = idpoly([1], [B], [], [], [A2]) ;
 Mi.Structure.B.Free = B;
 z = iddata(y, x) ;
@@ -424,13 +476,21 @@ plot(-M:M, -2/sqrt(n) * ones(1, 2*M+1) , '--' )
 hold off
 %%
 k = 7;
-x = rain_reconstructed(find(tt==nvdi_t(1)) + length(model_nvdi): find(tt==nvdi_t(1)) + length(model_nvdi) + length(validation_nvdi) - 1);
-y = validation_nvdi;
+idx_rain_nvdival = find(tt==nvdi_t(1)) + length(model_nvdi): find(tt==nvdi_t(1)) + length(model_nvdi) + length(validation_nvdi) - 1;
+x_val = log(rain_reconstructed(idx_rain_nvdival) + 1);
+x_model_val = cat(1, x, x_val);
+
+t_predict = cat(1,model_t, validation_t);
+y = cat(1, model_nvdi, validation_nvdi);
+y_trend = y - (t_predict.*slope + intercept);
+
 [Fx, Gx] = polydiv( inputModel.C, inputModel.A, k );
-xhatk = filter(Gx, inputModel.C, x);
+xhatk = filter(Gx, inputModel.C, x_model_val);
+
+xhatk_val = xhatk(length(model_nvdi)+1: end);
 %modelLim = 400
 figure
-plot([x xhatk] )
+plot([x_val xhatk_val] )
 %line( [modelLim modelLim], [-1e6 1e6 ], 'Color','red','LineStyle',':' )
 legend('Input signal', 'Predicted input', 'Prediction starts')
 title( sprintf('Predicted input signal, x_{t+%i|t}', k) )
@@ -440,8 +500,8 @@ std_xk = sqrt( sum( Fx.^2 )*var_ex );
 fprintf( 'The theoretical std of the %i-step prediction error is %4.2f.\n', k, std_xk)
 
 %% Form the residual. Is it behaving as expected? Recall, no shift here!
-ehat = x - xhatk;
-ehat = ehat(30:end);
+ehat = x_val - xhatk_val;
+%ehat = ehat(30:end);
 
 figure
 acf( ehat, 40, 0.05, 1 );
@@ -474,17 +534,16 @@ KC = conv( MboxJ.F, MboxJ.C );
 [Fhh, Ghh] = polydiv( conv(Fy, KB), KC, k );
 
 % Form the predicted output signal using the predicted input signal.
-yhatk  = filter(Fhh, 1, xhatk) + filter(Ghh, KC, x) + filter(Gy, KC, y);
+yhatk  = filter(Fhh, 1, xhatk) + filter(Ghh, KC, x_model_val) + filter(Gy, KC, y_trend);
 
 % A very common error is to forget to add the predicted inputs. Lets try
 % that to see what happens.
 % yhatk  = filter(Ghh, KC, x) + filter(Gy, KC, y);
 
 figure
-plot([y yhatk] )
+plot([y_trend yhatk] )
 %line( [modelLim modelLim], [-1e6 1e6 ], 'Color','red','LineStyle',':' )
 legend('Output signal', 'Predicted output', 'Prediction starts')
 title( sprintf('Predicted output signal, y_{t+%i|t}', k) )
-axis([1 N min(y)*1.5 max(y)*1.5])
-
+axis([1 N min(y_trend)*1.5 max(y_trend)*1.5])
 
