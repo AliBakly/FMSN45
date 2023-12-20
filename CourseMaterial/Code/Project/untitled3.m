@@ -195,14 +195,14 @@ lambda_max = bcNormPlot(nvdi_trend,1);
 % figure; 
 % lambda_max = bcNormPlot(nvdi_season,1);
 %% Ar(1) 
-plotACFnPACF(model_nvdi, 45, 'AR(1)' );
-data = iddata(model_nvdi);
+plotACFnPACF(nvdi_trend, 45, 'AR(1)' );
+data = iddata(nvdi_trend);
 Am = [1 1];
 
 model_init = idpoly(Am, [], []) ;
 model_armax_1 = pem(data , model_init);
 
-e_hat = filter(model_armax_1.A , model_armax_1.C , model_nvdi) ;
+e_hat = filter(model_armax_1.A , model_armax_1.C , monvdi_trenddel_nvdi) ;
 e_hat = e_hat(length(model_armax_1.A ) : end ) ;
 
 present(model_armax_1)
@@ -211,13 +211,13 @@ checkIfNormal(acfEst(2:end), 'ACF' );
 checkIfNormal(pacfEst(2:end), 'PACF' );
 checkIfWhite(e_hat);
 %% a1 + a36 
-data = iddata(model_nvdi);
+data = iddata(nvdi_trend);
 Am = [1 1 zeros(1,34) 1];
 model_init = idpoly(Am, [], []) ;
 model_init.Structure.a.Free = Am;
 model_armax_1 = pem(data , model_init);
 
-e_hat = filter(model_armax_1.A , model_armax_1.C , model_nvdi) ;
+e_hat = filter(model_armax_1.A , model_armax_1.C , nvdi_trend) ;
 e_hat = e_hat(length(model_armax_1.A ) : end ) ;
 
 present(model_armax_1)
@@ -227,13 +227,13 @@ checkIfNormal(pacfEst(2:end), 'PACF' );
 checkIfWhite(e_hat);
  
 %% Ar(1) with (1+a36 z^-36)
-data = iddata(model_nvdi);
+data = iddata(nvdi_trend);
 Am = conv([1 zeros(1, 35), -1], [1 1]);
 model_init = idpoly(Am, [], []) ;
 model_init.Structure.a.Free = Am;
 model_armax_1 = pem(data , model_init);
 
-e_hat = filter(model_armax_1.A , model_armax_1.C , model_nvdi) ;
+e_hat = filter(model_armax_1.A , model_armax_1.C , nvdi_trend) ;
 e_hat = e_hat(length(model_armax_1.A ) : end ) ;
 
 present(model_armax_1)
@@ -311,9 +311,9 @@ for i=1:2
     % Form the prediction error and examine the ACF. Note that the prediction
     % residual should only be white if k=1. 
     subplot(212)
-    plot(t_predict, ehat)
+    plot(t_predict, ehat.^2)
     hold on
-    plot(t_predict, ehat_naive)
+    plot(t_predict, ehat_naive.^2)
     legend('ehat = y-yhatk', 'naive')
     plotACFnPACF(ehat, 40, append(int2str(k), '-step prediction'));
     if(i == 1)
@@ -501,7 +501,7 @@ subplot(211)
 plot(t_predict_val, xhatk_val)
 hold on
 plot(t_predict_val, x_val)
-legend('xhatk', 'c')
+legend('xhatk', 'x')
 subplot(212)
 plot(t_predict_val, ehat_val);
 legend('ehat')
@@ -561,9 +561,9 @@ hold on
 plot(t_predict_val, naive(:,1))
 legend('y', 'yhatk', 'naive')
 subplot(212)
-plot(t_predict_val, ehat_val);
+plot(t_predict_val, ehat_val.^2);
 hold on
-plot(t_predict_val, naive(:,2))
+plot(t_predict_val, naive(:,2).^2)
 legend('ehat', 'ehat naive')
 %line( [modelLim modelLim], [-1e6 1e6 ], 'Color','red','LineStyle',':' )
 
