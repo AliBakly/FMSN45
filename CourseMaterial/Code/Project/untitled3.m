@@ -122,7 +122,6 @@ figure();
 hold on;
 pl1 = plot(tt, rain_reconstructed); 
 
-
 pl2 = plot(tt(1), rain_reconstructed(1),'*', 'color', 'r');
 hold on
 pl2 = plot(tt(2), rain_reconstructed(2),'*', 'color', 'r');
@@ -161,16 +160,20 @@ figure();
 plot(nvdi_t, nvdi)
 
 plotACFnPACF(nvdi, 40, 'data');
-figure; 
-lambda_max = bcNormPlot(nvdi,1);
+
 %%
 model_t = nvdi_t(idx_model_nvdi);
+%model_t = model_t(125:end);
 validation_t = nvdi_t(idx_validation_nvdi);
 test_t = nvdi_t(idx_test_nvdi);
 
 model_nvdi = nvdi(idx_model_nvdi);
+%model_nvdi = model_nvdi(125:end);
 validation_nvdi = nvdi(idx_validation_nvdi);
 test_nvdi = nvdi(idx_test_nvdi);
+
+figure; 
+lambda_max = bcNormPlot(model_nvdi,1)
 %% Remove deterministic trend WRONG ONLY ON MODEL DATA
 figure();
 plot(model_t, model_nvdi)
@@ -202,7 +205,7 @@ Am = [1 1];
 model_init = idpoly(Am, [], []) ;
 model_armax_1 = pem(data , model_init);
 
-e_hat = filter(model_armax_1.A , model_armax_1.C , monvdi_trenddel_nvdi) ;
+e_hat = filter(model_armax_1.A , model_armax_1.C , nvdi_trend) ;
 e_hat = e_hat(length(model_armax_1.A ) : end ) ;
 
 present(model_armax_1)
@@ -312,28 +315,36 @@ for i=1:2
     % residual should only be white if k=1. 
     subplot(212)
     plot(t_predict, ehat.^2)
+    var_ehat = var(ehat)
+
     hold on
     plot(t_predict, ehat_naive.^2)
+    var_ehat_naive = var(ehat_naive)
     legend('ehat = y-yhatk', 'naive')
     plotACFnPACF(ehat, 40, append(int2str(k), '-step prediction'));
     if(i == 1)
         var_noise = var(ehat);
     end
-    mean_ehat = mean(ehat) 
-    var_theoretical = (norm(Fk).^2) .*var_noise
-    var_est = var(ehat)
-    conf =0 + [-1 1].*norminv(0.975).*sqrt(var_theoretical)
-    precentage_outside = (sum(ehat > conf(2)) + sum(ehat < conf(1)))./length(ehat)
+    mean_ehat = mean(ehat) ;
+    var_theoretical = (norm(Fk).^2) .*var_noise;
+    var_est = var(ehat);
+    conf =0 + [-1 1].*norminv(0.975).*sqrt(var_theoretical);
+    precentage_outside = (sum(ehat > conf(2)) + sum(ehat < conf(1)))./length(ehat);
 end
 
 %% Examine the data.
 figure; 
 subplot(211); 
-idx_rain_nvdimodel_dates = find(tt==nvdi_t(1)): find(tt==nvdi_t(1)) + length(nvdi_trend) - 1;
+idx_rain_nvdimodel_dates = find(tt==model_t(1)): find(tt==model_t(1)) + length(nvdi_trend) - 1;
 x = rain_reconstructed(idx_rain_nvdimodel_dates);
+%x = x(125:end);
 %x = x./max(x); % RESCALING.
 y = nvdi_trend; 
+%y = y(17:end);
 x = log(x+1);
+mean_x = mean(x);
+x = x - mean_x;
+%x=x(17:end);
 %x = x;
 %x = ((max(model_nvdi) - min(model_nvdi)).*(x - min(x)))./(max(x)-min(x)) + min(model_nvdi);
 plot(x); % manual inspection
@@ -404,7 +415,7 @@ A2 = ones(1, r+1);
 %B = [zeros(1,3) ones(1, s+1)];
 %B = [0 0 0 1 0 0 1 1 1 zeros(1,22) 1 1 1 ];
 
-idx = [3 5 7 25 32 36];
+idx = [3 5 7 17 32 34 36];
 arr = zeros(1, idx(end) +1);
 arr(idx +1 ) = 1;
 B = arr;
@@ -433,10 +444,10 @@ title('etilde data');
 plotACFnPACF(etilde, M, 'Input Data' );
 
 A2_diff = [1 0 -1];
-Am = [1 1 zeros(1, 34) 1];%conv([1 zeros(1, 35) 1], A2_diff);
+Cm = [1 1];%conv([1 zeros(1, 35) 1], A2_diff);
 model_init = idpoly([1 1], [], []) ;
 %model_init.Structure.a.Free = Am;
-%model_init.Structure.c.Free = [1 1 1 1 ];
+%model_init.Structure.c.Free = Cm;
 %model_init = idpoly([1 1 1], [], []) ;
 model_input = pem(iddata(etilde), model_init);
 
@@ -479,8 +490,8 @@ plot(-M:M, -2/sqrt(n) * ones(1, 2*M+1) , '--' )
 hold off
 %%
 k = 7;
-idx_rain_nvdival = find(tt==nvdi_t(1)) + length(model_nvdi): find(tt==nvdi_t(1)) + length(model_nvdi) + length(validation_nvdi) - 1;
-x_val = log(rain_reconstructed(idx_rain_nvdival) + 1);
+idx_rain_nvdival = find(tt==model_t(1)) + length(model_nvdi): find(tt==model_t(1)) + length(model_nvdi) + length(validation_nvdi) - 1;
+x_val = log(rain_reconstructed(idx_rain_nvdival) + 1) - mean_x;
 x_model_val = cat(1, x, x_val);
 
 t_predict = cat(1,model_t, validation_t);
@@ -547,7 +558,7 @@ yhatk  = filter(Fhh, 1, xhatk) + filter(Ghh, KC, x_model_val) + filter(Gy, KC, y
 
 yhatk_val = yhatk(length(model_nvdi)+1:end) + (slope.*t_predict_val + intercept);
 ehat_val = y_val - yhatk_val;
-
+var_ehat = var(ehat_val)
 % A very common error is to forget to add the predicted inputs. Lets try
 % that to see what happens.
 % yhatk  = filter(Ghh, KC, x) + filter(Gy, KC, y);
