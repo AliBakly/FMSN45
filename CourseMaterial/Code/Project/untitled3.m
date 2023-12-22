@@ -272,8 +272,8 @@ for i=1:2
         % y_naive = zeros(1, length(y) + 7 );
         % y_naive(8: end) = y;
         % y_naive = y_naive(1:end - 7);
-        % ehat_naive = y-y_naive;
-        % ehat_naive = ehat_naive(k + 20:length(ehat_naive));
+        % ehat_naive = y-y_naive';
+        %ehat_naive = ehat_naive(k + 20:length(ehat_naive));
         y_naive = zeros(1, length(y) + 36 );
         y_naive(37: end) = y;
         y_naive = y_naive(1:end - 36);
@@ -520,6 +520,7 @@ xhatk_test = xhatk_model_val_test(length(model_nvdi) + length(validation_nvdi) +
 
 ehat_val = x_val - xhatk_val;
 ehat_test = x_test - xhatk_test;
+ehat_model_val_inp = x_model_val - xhatk_model_val; % need to throw here
 
 t_predict_val = t_predict_model_val(length(model_nvdi) + 1 : end);
 t_predict_test = t_predict_model_val_test(length(model_nvdi) + length(validation_nvdi) + 1: end);
@@ -597,6 +598,7 @@ yhatk_test = yhatk_model_val_test(length(model_nvdi) + length(validation_nvdi) +
 
 ehat_val = y_val - yhatk_val;
 ehat_test = y_test - yhatk_test;
+ehat_model_val = y_model_val - yhatk_model_val + (slope.*t_predict_model_val + intercept);% Need to throw SHould not use test here, but forget now
 
 var_ehat_val = var(ehat_val)
 var_ehat_test = var(ehat_test)
@@ -666,7 +668,7 @@ switch codeVersion
         nnz_KB  = find(KB ~= 0);
         noPar   = length(nnz_KB) + 1;                            % The vector of unknowns is [ -KA(2) -KA(3) KB(1) KB(2) KB(3) KC(3) ]
         xt      = zeros(noPar, N);               % Estimated states. Set the initial state to the estimated parameters.
-        xt(:,max(nnz_KB)) = [ -KA(2) KB(nnz_KB)];
+        xt(:,max(nnz_KB)-1) = [ -KA(2) KB(nnz_KB)];
     case 2
         noPar   = 3;                            % The vector of unknowns is [ -KA(2) -KA(3) KC(3) ]
         xt      = zeros(noPar,N);               % Estimated states. Set the initial state to the estimated parameters.
@@ -678,20 +680,25 @@ switch codeVersion
 end
 %%
 A     = eye(noPar);
-Rw    = std(ehat_val);                                % Measurement noise covariance matrix, R_w. Try using the noise estimate from the polynomial prediction.
-Re    = 1e-6*eye(noPar);                        % System noise covariance matrix, R_e.
-Rx_t1 = 1e-4*eye(noPar);                        % Initial covariance matrix, R_{1|0}^{x,x}
+Rw    = std(ehat_model_val);                                % Measurement noise covariance matrix, R_w. Try using the noise estimate from the polynomial prediction.
+Re    = 1e-9*eye(noPar);                        % System noise covariance matrix, R_e.
+Rx_t1 = 4e-4*eye(noPar);                        % Initial covariance matrix, R_{1|0}^{x,x}
 Rx_k  = Rx_t1;
 h_et  = zeros(N,1);                             % Estimated one-step prediction error.
 yhatK = zeros(N,1);                             % Estimated output.
 xStd  = zeros(noPar,N);                         % Stores one std for the one-step prediction.
-startInd = max(nnz_KB) + 1;                                   % We use t-2, so start at t=3.
+startInd = max(nnz_KB);                                   % We use t-2, so start at t=3.
+
 for t=startInd:N
     % Update the predicted state and the time-varying state vector.
     x_t1 = A*xt(:,t-1);                         % x_{t|t-1} = A x_{t-1|t-1}
     switch codeVersion
         case 1                                  % Estimate all parameters.
             C = [ y(t-1) x(t - nnz_KB + 1)' ];
+            % C = [yhatK_1(t) x(t - nnz_KB + 2)'];--> yhatK_2
+            % C = [yhatK_2(t+1) x(t - nnz_KB + 3)']; ---> yhatK_3
+            % ----- xhatk
+            % C = [yhatK_3(t+2) xhatk_1 x(t - nnz_KB(2:end) + 4)'];
             yhatK(t) = C*x_t1;
         case 2                                  % Note that KB does not vary in this case.
             C = [ y(t-1) y(t-2) h_et(t-2) ];
@@ -754,6 +761,204 @@ xlim([modelLim N])
 
 % Form the prediction residuals for the validation data.
 eK = y(length(model_nvdi)+1:end)-yhatK(length(model_nvdi)+1:end);
+var(eK)
+plotACFnPACF( eP, 40, 'One-step prediction using the polynomial estimate');
+plotACFnPACF( eK, 40, 'One-step prediction using the Kalman filter');
+fprintf('The variance of the validation data is               %7.2f.\n', var(y(modelLim:end)))
+fprintf('The estimated variance of the polynomial estimate is %7.2f.\n', var(eP))
+fprintf('The estimated variance of the Kalman estimate is     %7.2f.\n', var(eK))
+
+%% K = 7
+%%%% Estimate the unknown parameters using a Kalman filter and form the one-step prediction.
+% The ARMAX model is  
+%
+%   KA y(t) = KB x(t) + KC e(t)
+%
+% This means, for our example, that the one-step prediction is formed as
+%
+% y(t+1) = -KA(2)y(t) - KA(3)y(t) + KB(1)x(t+1) + KB(2)x(t) + KB(3)x(t-1) + e(t+1) + KC(3)e(t-1)
+%        =  [ y(t) y(t-1) x(t+1) x(t) x(t-1) e(t-1) ] [ -KA(2) -KA(3) KB(1) KB(2) KB(3) KC(3) ]^T + e(t+1)
+%
+% Note that Matlab vectors starts at index 1, therefore the first index in
+% the A vector, A(1), is the same as we normally denote a_{0}. Furthermore,
+% note that both x(t) are x(t-1) known, whereas x(t+1) needs to be
+% predicted. For simplicity, we here use the polynomial prediction of the
+% input, but this should of course also be predicted using a Kalman filter.
+% 
+% For illustration purposes, we consider three different cases; in the first
+% version, we estimate the parameters of the input; in the second, we 
+% assume these to be fixed. In the third case, we modify the second case
+% and examine if we can remove the KC parameter without losing too much
+% performance. 
+%
+N = length(t_predict_model_val);
+y = y_trend_model_val;
+x = x_model_val;
+codeVersion = 1;
+modelLim = 100;
+switch codeVersion
+    case 1
+        nnz_KB  = find(KB ~= 0);
+        noPar   = length(nnz_KB) + 1;                            % The vector of unknowns is [ -KA(2) -KA(3) KB(1) KB(2) KB(3) KC(3) ]
+        xt      = zeros(noPar, N);               % Estimated states. Set the initial state to the estimated parameters.
+        xt(:,max(nnz_KB)-1) = [ -KA(2) KB(nnz_KB)];
+    case 2
+        noPar   = 3;                            % The vector of unknowns is [ -KA(2) -KA(3) KC(3) ]
+        xt      = zeros(noPar,N);               % Estimated states. Set the initial state to the estimated parameters.
+        xt(:,2) = [ -KA(2) -KA(3) KC(3) ];
+    case 3
+        noPar   = 2;                            % The vector of unknowns is [ -KA(2) -KA(3)  ]
+        xt      = zeros(noPar,N);               % Estimated states. Set the initial state to the estimated parameters.
+        xt(:,2) = [ -KA(2) -KA(3) ];
+end
+%%
+A     = eye(noPar);
+Rw    = std(ehat_model_val);                                % Measurement noise covariance matrix, R_w. Try using the noise estimate from the polynomial prediction.
+Re    = 1e-9*eye(noPar);                        % System noise covariance matrix, R_e.
+Rx_t1 = 4e-4*eye(noPar);                        % Initial covariance matrix, R_{1|0}^{x,x}
+Rx_k  = Rx_t1;
+h_et  = zeros(N,1);                             % Estimated one-step prediction error.
+yhatK = zeros(N,1);                             % Estimated output.
+xStd  = zeros(noPar,N);                         % Stores one std for the one-step prediction.
+yhatk_7 = zeros(N,1);  
+
+noPar_inp = length(inputModel.A) - 1;
+A_inp     = zeros(noPar_inp);
+A_inp(1, :) = - inputModel.A(2:end);
+A_inp(2: noPar_inp+1:end) = 1;
+xt_inp      = zeros(noPar_inp, N);
+Rw_inp    = 1e-1;%std(ehat_model_val_inp);                                % Measurement noise covariance matrix, R_w. Try using the noise estimate from the polynomial prediction.
+Re_inp    = 1e-1*eye(noPar_inp);                        % System noise covariance matrix, R_e.
+Rx_t1_inp = 1e-1*eye(noPar_inp);                        % Initial covariance matrix, R_{1|0}^{x,x}
+Rx_k_inp  = Rx_t1_inp;
+h_et_inp  = zeros(N,1);                             % Estimated one-step prediction error.
+xhatK_inp = zeros(N,1);                             % Estimated output.
+xhatK_inp_4 = zeros(N,1); % testing
+xStd_inp  = zeros(noPar_inp,N);                         % Stores one std for the one-step prediction.
+
+startInd = max(nnz_KB);                                   % We use t-2, so start at t=3.
+
+for t=startInd:N
+    % Input
+    % Update the predicted state and the time-varying state vector.
+    x_t1_inp = A_inp*xt_inp(:,t-1);                         % x_{t|t-1} = A x_{t-1|t-1}
+    
+    C_inp = [1, zeros(1, noPar_inp - 1)];
+    % C = [yhatK_1(t) x(t - nnz_KB + 2)'];--> yhatK_2
+    % C = [yhatK_2(t+1) x(t - nnz_KB + 3)']; ---> yhatK_3
+    % ----- xhatk
+    % C = [yhatK_3(t+2) xhatk_1 x(t - nnz_KB(2:end) + 4)'];
+    xhatK_inp(t) = C_inp*x_t1_inp;
+
+    % Update the parameter estimates.
+    Ry_inp = C_inp*Rx_t1_inp*C_inp' + Rw_inp;                       % R_{t|t-1}^{y,y} = C R_{t|t-1}^{x,x} + Rw
+    Kt_inp = Rx_t1_inp*C_inp'/Ry_inp;                           % K_t = R^{x,x}_{t|t-1} C^T inv( R_{t|t-1}^{y,y} )
+    h_et_inp(t) = x(t)-xhatK_inp(t);                    % One-step prediction error, \hat{e}_t = y_t - \hat{y}_{t|t-1}
+    xt_inp(:,t) = x_t1_inp + Kt_inp*( h_et_inp(t) );            % x_{t|t}= x_{t|t-1} + K_t ( y_t - Cx_{t|t-1} ) 
+
+    % Update the covariance matrix estimates.
+    Rx_t_inp  = Rx_t1_inp - Kt_inp*Ry_inp*Kt_inp';                  % R^{x,x}_{t|t} = R^{x,x}_{t|t-1} - K_t R_{t|t-1}^{y,y} K_t^T
+    Rx_t1_inp = A_inp*Rx_t_inp*A_inp' + Re_inp;                     % R^{x,x}_{t+1|t} = A R^{x,x}_{t|t} A^T + Re
+
+    % Estimate a one std confidence interval of the estimated parameters.
+    xStd_inp(:,t) = sqrt( diag(Rx_t_inp) );             % This is one std for each of the parameters for the one-step prediction.
+    
+    % 2 - 4 step predictions
+    k= 4;
+    Rx_k_inp = Rx_t1_inp;
+    ksteps_inp = [xhatK_inp(t)];
+    for k0=2:k
+        Ck = C_inp;%[ -yk -y(t-6+k0) -y(t-7+k0) h_et(t+k0-1) h_et(t+k0-3) ]; % C_{t+k|t}
+        xk = Ck*A_inp^k*xt_inp(:,t-1);                    % \hat{y}_{t+k|t} = C_{t+k|t} A^k x_{t|t}
+        Rx_k_inp = A_inp*Rx_k_inp*A_inp' + Re_inp;                  % R_{t+k+1|t}^{x,x} = A R_{t+k|t}^{x,x} A^T + Re  
+        ksteps_inp(end + 1) = xk;
+    end
+
+    %xhatK_inp_4(t - 1 + k) = xk;
+    %yhatk(t - 1 +k) = yk;                            % Note that this should be stored at t+k.
+
+
+    % Output
+    % Update the predicted state and the time-varying state vector.
+    x_t1 = A*xt(:,t-1);                         % x_{t|t-1} = A x_{t-1|t-1}
+
+    C = [ y(t-1) x(t - nnz_KB + 1)' ];
+    % C = [yhatK_1(t) x(t - nnz_KB + 2)'];--> yhatK_2
+    % C = [yhatK_2(t+1) x(t - nnz_KB + 3)']; ---> yhatK_3
+    % ----- xhatk
+    % C = [yhatK_3(t+2) xhatk_1 x(t - nnz_KB(2:end) + 4)'];
+    yhatK(t) = C*x_t1;
+
+    % Update the parameter estimates.
+    Ry = C*Rx_t1*C' + Rw;                       % R_{t|t-1}^{y,y} = C R_{t|t-1}^{x,x} + Rw
+    Kt = Rx_t1*C'/Ry;                           % K_t = R^{x,x}_{t|t-1} C^T inv( R_{t|t-1}^{y,y} )
+    h_et(t) = y(t)-yhatK(t);                    % One-step prediction error, \hat{e}_t = y_t - \hat{y}_{t|t-1}
+    xt(:,t) = x_t1 + Kt*( h_et(t) );            % x_{t|t}= x_{t|t-1} + K_t ( y_t - Cx_{t|t-1} ) 
+
+    % Update the covariance matrix estimates.
+    Rx_t  = Rx_t1 - Kt*Ry*Kt';                  % R^{x,x}_{t|t} = R^{x,x}_{t|t-1} - K_t R_{t|t-1}^{y,y} K_t^T
+    Rx_t1 = A*Rx_t*A' + Re;                     % R^{x,x}_{t+1|t} = A R^{x,x}_{t|t} A^T + Re
+
+    % Estimate a one std confidence interval of the estimated parameters.
+    xStd(:,t) = sqrt( diag(Rx_t) );             % This is one std for each of the parameters for the one-step prediction.
+    
+    k= 5;
+    Rx_k = Rx_t1;
+    yk = yhatK(t);
+    for k0=2:k
+        if (k0 > 3)
+            Ck = [yk ksteps_inp(1:k0 - 3) x(t - nnz_KB(k0 - 3 +1:end) + k0)']; % C_{t+k|t}
+        else
+            Ck = [yk x(t - nnz_KB + k0)']; % C_{t+k|t}
+        end
+        yk = Ck*A^k*xt(:,t-1);                    % \hat{y}_{t+k|t} = C_{t+k|t} A^k x_{t|t}
+        Rx_k = A*Rx_k*A' + Re;                  % R_{t+k+1|t}^{x,x} = A R_{t+k|t}^{x,x} A^T + Re  
+    end
+    yhatk_7(t - 1 +k) = yk;  
+end
+yhatk_7 = yhatk_7(1:end-(k-1));
+
+
+
+%% Examine the estimated parameters.
+% Compute the true parameters for the KA, KB, and KC polynomials.
+% KA0 = conv( A1, A2 );
+% KB0 = conv( A1, B );
+% KC0 = conv( A2, C1 );
+switch codeVersion
+    case 1
+        trueParams = [ -KA(2) KB(nnz_KB)];
+    case 2
+        trueParams = [ -KA0(2) -KA0(3) KC0(3) ];
+    case 3
+        trueParams = [ -KA0(2) -KA0(3) ];
+end
+
+figure
+plotWithConf( 1:N, xt', xStd', trueParams );
+line( [modelLim modelLim], [-2 2], 'Color','red','LineStyle',':' )
+axis([startInd-1 N -1.5 1.5])
+title(sprintf('Estimated parameters, with Re = %7.6f and Rw = %4.3f', Re(1,1), Rw(1,1)))
+xlabel('Time')
+fprintf('Using code version %i:\n', codeVersion);
+fprintf('The final values of the Kalman estimated parameters are:\n')
+for k0=1:length(trueParams)
+    fprintf('  True value: %5.2f, estimated value: %5.2f (+/- %5.4f).\n', trueParams(k0), xt(k0,end), xStd(k0,end) )
+end 
+
+
+%% Show the one-step prediction. 
+%xhatK_inp_4 = xhatK_inp_4(1:end-(k-1));
+
+figure
+plot( [y yhatk_7] )
+title('One-step prediction of the validation data')
+xlabel('Time')
+legend('Realisation', 'Kalman estimate', 'Polynomial estimate', 'Location','SW')
+xlim([0 N])
+
+% Form the prediction residuals for the validation data.
+eK = y(length(model_nvdi)+1:end)-yhatk_7(length(model_nvdi)+1:end);
 var(eK)
 plotACFnPACF( eP, 40, 'One-step prediction using the polynomial estimate');
 plotACFnPACF( eK, 40, 'One-step prediction using the Kalman filter');
