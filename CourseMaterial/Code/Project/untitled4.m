@@ -37,10 +37,10 @@ rain_init(3,:) = y./3;
 
 %% Estimating parameters with Kalman Filter
 windowsize = 20;
-a1 = -0.5;%0.999999; % Intial AR param estimate
-
+a1 = -0.7;%0.999999; % Intial AR param estimate
+converged = false;
 for i = 1:21 % Update Ar 20 time
-    if(i == 21) % If on last iteration, use all available data to reconstruct
+    if(converged) % If on last iteration, use all available data to reconstruct
         y = city.rain_org(1:end);
         N = length(y);
         rain_init = zeros(3,N);
@@ -97,7 +97,7 @@ for i = 1:21 % Update Ar 20 time
     model_armax_1 = pem(data , model_init);
     present(model_armax_1)
     if a1 == model_armax_1.A(2)
-        break % We have converged
+        converged = true; % We have converged
     else
     a1 = model_armax_1.A(2) % New Ar parameter, update and loop
     end
@@ -154,7 +154,7 @@ plot(ElGeneina.rain_org_t, ElGeneina.rain_org,'*', 'color', '#395c0a','LineWidth
 legend('Original Rain', 'Reconstructed Rain')
 xlabel('Time')
 ylabel('Rain')
-xlim([tt(13),tt(30)])
+%xlim([tt(13),tt(30)])
 title('Reconstructed Rain')
 %% Compare sums
 sums = zeros(480, 1);
