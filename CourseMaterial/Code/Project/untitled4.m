@@ -11,7 +11,8 @@ hold on
 pl1 = plot(city.rain_t, city.rain,'*', 'color', 'r','LineWidth',1);
 hold on
 pl2 = plot(city.rain_org_t, city.rain_org,'*', 'color', '#0072BD','LineWidth',1);
-legend([pl2 pl1], {'Meassurements', 'Interpolation'})
+lgd = legend([pl2 pl1], {'Meassurements', 'Interpolation'});
+fontsize(lgd,12,'points')
 xlabel('Time')
 ylabel('Rain')
 title('Rain plot')
@@ -37,10 +38,12 @@ rain_init(3,:) = y./3;
 
 %% Estimating parameters with Kalman Filter
 windowsize = 20;
-a1 = -0.7;%0.999999; % Intial AR param estimate
+a1 = 0.03;%0.999999; % Intial AR param estimate
 converged = false;
-for i = 1:21 % Update Ar 20 time
+converged_2 = false;
+while converged_2 == false % Update Ar 20 time
     if(converged) % If on last iteration, use all available data to reconstruct
+        converged_2 = true;
         y = city.rain_org(1:end);
         N = length(y);
         rain_init = zeros(3,N);
@@ -191,12 +194,13 @@ validation_nvdi = nvdi(idx_validation_nvdi);
 test_nvdi = nvdi(idx_test_nvdi);
 
 figure();
-plot(model_t, model_nvdi)
+plot(model_t, model_nvdi, 'LineWidth',1.2)
 hold on
-plot([model_t(end); validation_t], [model_nvdi(end); validation_nvdi])
+plot([model_t(end); validation_t], [model_nvdi(end); validation_nvdi], 'LineWidth',1.2)
 hold on;
-plot([validation_t(end); test_t], [validation_nvdi(end); test_nvdi])
-legend('Model', 'Validation', 'Test')
+plot([validation_t(end); test_t], [validation_nvdi(end); test_nvdi], 'LineWidth',1.2)
+lgd = legend('Model', 'Validation', 'Test');
+fontsize(lgd,12,'points')
 xlabel('Time')
 ylabel('NVDI')
 title('NVDI Data and Split')
