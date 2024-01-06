@@ -38,9 +38,10 @@ rain_init(3,:) = y./3;
 
 %% Estimating parameters with Kalman Filter
 windowsize = 20;
-a1 = 0.03;%0.999999; % Intial AR param estimate
+a1 = 0.5;%0.999999; % Intial AR param estimate
 converged = false;
 converged_2 = false;
+convergence_counter = 0;
 while converged_2 == false % Update Ar 20 time
     if(converged) % If on last iteration, use all available data to reconstruct
         converged_2 = true;
@@ -54,10 +55,10 @@ while converged_2 == false % Update Ar 20 time
     A =[-a1.^3 0 0;a1.^2 0 0; -a1 0 0];
     Z = [1 -a1 a1^2; 0 1 -a1; 0 0 1];
     at = zeros(N,1);
-    Rw    = 1e-3;                                      % Measurement noise covariance matrix, R_w. Note that Rw has the same dimension as Ry.
-    Re    = eye(3)*1e1;%10e-1                        % System noise covariance matrix, R_e. Note that Re has the same dimension as Rx_t1.
+    Rw    = 1e-2;                                      % Measurement noise covariance matrix, R_w. Note that Rw has the same dimension as Ry.
+    Re    = eye(3)*1e2;%10e-1                        % System noise covariance matrix, R_e. Note that Re has the same dimension as Rx_t1.
     Re = Z*Re*transpose(Z);
-    Rx_t1 = eye(3)*1e1; %correct?                             % Initial covariance matrix, V0 = R_{1|0}^{x,x}
+    Rx_t1 = eye(3)*1e2; %correct?                             % Initial covariance matrix, V0 = R_{1|0}^{x,x}
     e_hat  = zeros(N,1);                             % Estimated one-step prediction error.
     xt    = rain_init;                         % Estimated states. Intial state, x_{1|0} = 0.
     yhat  = zeros(N,1);                             % Estimated output.
@@ -76,10 +77,8 @@ while converged_2 == false % Update Ar 20 time
         
         if (any(xt(:,t) < 0))
             target_sum = sum(xt(:,t)); % The sum that needs to be maintained
-            
-            % Solve the NNLS problem
-            new_data = lsqnonneg(eye(3), xt(:,t));
-            
+            new_data = max(xt(:,t), 0);
+
             % Scale the new data to ensure the sum matches the target sum
             scale_factor = target_sum / sum(new_data);
             xt(:,t) = new_data * scale_factor;
@@ -94,15 +93,19 @@ while converged_2 == false % Update Ar 20 time
         xStd(:,t) = sqrt( diag(Rx_t) );            % This is one std for each of the parameters for the one-step prediction.    
     end
     
-    xtemp = flip(xt,1);
-    data = iddata(xtemp(:)); % All x data, should be AR
-    model_init = idpoly([1 a1], [], []) ;
-    model_armax_1 = pem(data , model_init);
-    present(model_armax_1)
-    if a1 == model_armax_1.A(2)
-        converged = true; % We have converged
-    else
-    a1 = model_armax_1.A(2) % New Ar parameter, update and loop
+    if converged_2 == false
+        xtemp = flip(xt,1);
+        data = iddata(xtemp(:)); % All x data, should be AR
+        model_init = idpoly([1 a1], [], []) ;
+        model_armax_1 = pem(data , model_init);
+        present(model_armax_1)
+        if a1 == model_armax_1.A(2)
+            converged = true; % We have converged
+            final_a1 = a1
+        else
+            a1 = model_armax_1.A(2) % New Ar parameter, update and loop
+            convergence_counter = convergence_counter +1;
+        end
     end
 end
 
@@ -115,37 +118,9 @@ tt = city.rain_t;
 
 std_rec = flip(xStd,1); % DISCUSS THIS
 std_reconstructed = std_rec(:);
-std_reconstructed = [std_reconstructed(2:end); 0];
+std_reconstructed = [std_reconstructed(2:end); std_reconstructed(end)];
 
-%% Plot reconstruction
-figure(); 
-hold on;
-pl1 = plot(tt, rain_reconstructed); 
-
-pl2 = plot(tt(1), rain_reconstructed(1),'*', 'color', 'r');
-hold on
-pl2 = plot(tt(2), rain_reconstructed(2),'*', 'color', 'r');
-hold on
-pl3 = plot(tt(2), rain(2),'*', 'color', 'k');
-hold on
-counter = 2;
-for i=3:3:length(rain_reconstructed)-2
-    plot(tt(i), rain_reconstructed(i),'*', 'color', 'r')
-    hold on 
-    plot(tt(i+1), rain_reconstructed(i+1),'*', 'color', 'r')
-    hold on
-    pl2 = plot(tt(i+2), rain_reconstructed(i+2),'*', 'color', 'r');
-    hold on
-    pl3 = plot(tt(i+2), rain(counter),'*', 'color', 'k');
-    hold on
-    counter = counter + 1;
-end
-
-legend([pl1 pl2 pl3],{'Reconstructed Line ','Reconstructed Points', 'Original'})
-xlabel('Time')
-ylabel('Rain')
-title('Reconstructed Rain')
-%% Other viz for Project
+%% Viz for Project
 figure()
 area(ElGeneina.rain_org_t, ElGeneina.rain_org, 'FaceColor','#9eed34')
 hold on
@@ -154,11 +129,14 @@ hold on
 plot(tt, rain_reconstructed,'*', 'color', '#0072BD','LineWidth',1)
 hold on
 plot(ElGeneina.rain_org_t, ElGeneina.rain_org,'*', 'color', '#395c0a','LineWidth',1)
-legend('Original Rain', 'Reconstructed Rain')
+lgd = legend('Original Rain', 'Reconstructed Rain');
+fontsize(lgd,11,'points')
 xlabel('Time')
 ylabel('Rain')
-%xlim([tt(13),tt(30)])
+%xlim([tt(14),tt(31)])
+%ylim([0, 250])
 title('Reconstructed Rain')
+%plotWithConf( 1:3*N, rain_reconstructed, std_reconstructed);
 %% Compare sums
 sums = zeros(480, 1);
 sums(1) = 0;
@@ -184,12 +162,12 @@ plotACFnPACF(nvdi, 100, 'data');
 %%
 %idx_model_nvdi = idx_model_nvdi(115:end);
 model_t = nvdi_t(idx_model_nvdi);
-%model_t = model_t(125:end);
+%model_t = model_t(110:end);
 validation_t = nvdi_t(idx_validation_nvdi);
 test_t = nvdi_t(idx_test_nvdi);
 
 model_nvdi = nvdi(idx_model_nvdi);
-%model_nvdi = model_nvdi(125:end);
+%model_nvdi = model_nvdi(110:end);
 validation_nvdi = nvdi(idx_validation_nvdi);
 test_nvdi = nvdi(idx_test_nvdi);
 
@@ -208,87 +186,36 @@ title('NVDI Data and Split')
 figure; 
 lambda_max = bcNormPlot(model_nvdi,1)
 %% Remove deterministic trend WRONG ONLY ON MODEL DATA
-figure();
-plot(model_t, model_nvdi)
-
 mdl = fitlm(model_t, model_nvdi)
 intercept = mdl.Coefficients(1,1).Estimate;
 slope = mdl.Coefficients(2,1).Estimate;
-nvdi_trend = model_nvdi- (model_t.*slope + intercept);
+nvdi_no_trend = model_nvdi- (model_t.*slope + intercept);
+nvdi_no_trend_copy = nvdi_no_trend;
 figure();
-plot(model_t, nvdi_trend)
-plotACFnPACF(nvdi_trend, 40, 'data');
+plot(model_t, nvdi_no_trend)
+plotACFnPACF(nvdi_no_trend, 40, 'data');
 figure; 
-lambda_max = bcNormPlot(nvdi_trend,1);
+lambda_max = bcNormPlot(nvdi_no_trend,1);
+figure();
+plot(model_t, nvdi_no_trend)
 
-outlier = [0.0802; %KALMANNNNN
-    0.0986;
-    0.1280;
-    0.1342;
-    0.1628;
-    0.1701;
-    0.1914;
-    0.1959;
-    0.1999;
-    0.1943]; %CHEATing????
-model_nvdi(93:102) = outlier;
-nvdi_trend(93:102) = outlier - (model_t(93:102).*slope + intercept); 
-nvdi(93:102) = outlier;
-
-%% Remove season of 36
-% A36 = [1 zeros(1, 35) -1]; 
-% nvdi_trend = filter(A36, 1, nvdi_trend);
-% nvdi_trend = nvdi_trend(length(A36) : end );
-% nvdi_t = nvdi_t(length(A36) : end);
-% figure();
-% plot(nvdi_t, nvdi_season)
-% plotACFnPACF(nvdi_season, 40, 'data');
-% figure; 
-% lambda_max = bcNormPlot(nvdi_season,1);
-%% Ar(1) 
-plotACFnPACF(nvdi_trend, 100, 'AR(1)' );
-data = iddata(nvdi_trend);
-Am = [1 1];
-
-model_init = idpoly(Am, [], []) ;
-model_armax_1 = pem(data , model_init);
-
-e_hat = filter(model_armax_1.A , model_armax_1.C , nvdi_trend) ;
-e_hat = e_hat(length(model_armax_1.A ) : end ) ;
-
-present(model_armax_1)
-[acfEst, pacfEst] = plotACFnPACF(e_hat, 100, 'AR(1)' );
-checkIfNormal(acfEst(2:end), 'ACF' );
-checkIfNormal(pacfEst(2:end), 'PACF' );
-checkIfWhite(e_hat);
-%% a1 + a36 
-data = iddata(nvdi_trend);
-Am = [1 1 zeros(1,34) 1];
-model_init = idpoly(Am, [], []) ;
-model_init.Structure.a.Free = Am;
-model_armax_1 = pem(data , model_init);
-
-e_hat = filter(model_armax_1.A , model_armax_1.C , nvdi_trend) ;
-e_hat = e_hat(length(model_armax_1.A ) : end ) ;
-
-present(model_armax_1)
-[acfEst, pacfEst] = plotACFnPACF(e_hat, 100, 'AR(1)' );
-checkIfNormal(acfEst(2:end), 'ACF' );
-checkIfNormal(pacfEst(2:end), 'PACF' );
-checkIfWhite(e_hat);
  
-%% Ar(1) with (1+a36 z^-36)
-data = iddata(nvdi_trend);
-Am = conv([1 1], [1 zeros(1, 35), -1]);
-Am = [Am zeros(1, 34) 1]; % ehhh
-%Cm = [1 0 1];%[1 0 1 1];
-Cm = [];
+%% Ar(1) with (1+a36 z^-36) and C = 36
+nvdi_no_trend_copy(90:100) = nvdi_no_trend(90-36:100-36);
+
+data = iddata(nvdi_no_trend);
+Am = conv([1 0.1 0.1], [1 zeros(1, 35), 0.1]);
+Cm = [1 zeros(1, 35),0.1];
 model_init = idpoly(Am, [], Cm);
 model_init.Structure.a.Free = Am;
-%model_init.Structure.c.Free = Cm;
+model_init.Structure.c.Free = Cm;
 model_armax_1 = pem(data , model_init);
 
-e_hat = filter(model_armax_1.A , model_armax_1.C , nvdi_trend) ;
+% model_nvdi(85:98) = y1(85:98) + (model_t(85:98).*slope + intercept);
+% nvdi_no_trend_copy(85:98) = y1(85:98) ; 
+% nvdi(85:98) = y1(85:98) + (model_t(85:98).*slope + intercept);
+
+e_hat = filter(model_armax_1.A , model_armax_1.C , nvdi_no_trend) ;
 e_hat = e_hat(length(model_armax_1.A ) : end ) ;
 
 present(model_armax_1)
@@ -302,8 +229,8 @@ checkIfWhite(e_hat);
 ks = [1 7];
 naive_vals = {};
 for i=1:2
-    t_predict = cat(1,model_t, validation_t);
-    y = cat(1, model_nvdi, validation_nvdi);
+    t_predict = cat(1,model_t, validation_t, test_t);
+    y = cat(1, model_nvdi, validation_nvdi, test_nvdi);
     y_trend = y - (t_predict.*slope + intercept);
     A = model_armax_1.A;
     C = model_armax_1.C;
@@ -314,22 +241,30 @@ for i=1:2
         y_naive = zeros(1, length(y) +1 );
         y_naive(2: end) = y;
         y_naive = y_naive(1:end - 1);
-        
         ehat_naive = y-y_naive';
 
-        y_naive = y_naive(length(model_t)+1:end);
-        ehat_naive = ehat_naive(length(model_t)+1:length(t_predict));
-        naive_vals{1} = [y_naive' ehat_naive];
+        y_naive_val = y_naive(idx_validation_nvdi);
+        ehat_naive_val = ehat_naive(idx_validation_nvdi);
+
+        y_naive_test = y_naive(idx_test_nvdi);
+        ehat_naive_test = ehat_naive(idx_test_nvdi);
+
+        naive_vals{1}{1} = [y_naive_val' ehat_naive_val];
+        naive_vals{1}{2} = [y_naive_test' ehat_naive_test];
     else % 7 - step: Use last years value
         y_naive = zeros(1, length(y) + 36 );
         y_naive(37: end) = y;
         y_naive = y_naive(1:end - 36);
         ehat_naive = y-y_naive';
 
-        y_naive = y_naive(length(model_t)+1:end);
-        ehat_naive = ehat_naive(length(model_t)+1:length(t_predict));
-        naive_vals{7} = [y_naive' ehat_naive];
+        y_naive_val = y_naive(idx_validation_nvdi);
+        ehat_naive_val = ehat_naive(idx_validation_nvdi);
 
+        y_naive_test = y_naive(idx_test_nvdi);
+        ehat_naive_test = ehat_naive(idx_test_nvdi);
+
+        naive_vals{7}{1} = [y_naive_val' ehat_naive_val];
+        naive_vals{7}{2} = [y_naive_test' ehat_naive_test];
     end
     
     % Predict
@@ -337,73 +272,82 @@ for i=1:2
     yhatk = filter(Gk, C, y_trend) ;
     yhatk = yhatk + (t_predict.*slope + intercept); % Add trend
     ehat = y-yhatk;
+    [acfEst, pacfEst] = plotACFnPACF(ehat, 70, append(int2str(k), '-step prediction'));
+    checkIfNormal(acfEst(2:end), 'ACF' );
+    checkIfNormal(pacfEst(2:end), 'PACF' );
+    checkIfWhite(e_hat);
 
-    yhatk = yhatk(length(model_t)+1:end);
-    ehat = ehat(length(model_t)+1:end);
 
-    t_predict = t_predict(length(model_t)+1:end);
-    y = y(length(model_t)+1:end);
+    yhatk_val = yhatk(idx_validation_nvdi);
+    ehat_val = ehat(idx_validation_nvdi);
+    
+    yhatk_test = yhatk(idx_test_nvdi);
+    ehat_test = ehat(idx_test_nvdi);
+
+    t_predict_val = t_predict(idx_validation_nvdi);
+    y_val = y(idx_validation_nvdi);
+
+    t_predict_test = t_predict(idx_test_nvdi);
+    y_test = y(idx_test_nvdi);
+    
+    % Validation plots
     figure()
     subplot(211)
-    plot(t_predict,y)
+    plot(t_predict_val,y_val)
     hold on
-    plot(t_predict, yhatk)
+    plot(t_predict_val, yhatk_val)
     hold on
-    plot(t_predict, y_naive)
-    title('NVDI')
+    plot(t_predict_val, y_naive_val)
+    title('NVDI: Validation')
     legend('True data', append(int2str(k), '-step prediction'), 'Naive')
 
-    % Form the prediction error and examine the ACF. Note that the prediction
-    % residual should only be white if k=1. 
     subplot(212)
-    plot(t_predict, ehat)
-    var_ehat = var(ehat)./var(y)
-
+    plot(t_predict_val, ehat_val)
+    var_ehat_val_norm = var(ehat_val)./var(y_val)
     hold on
-    plot(t_predict, ehat_naive)
-    var_ehat_naive = var(ehat_naive)./var(y)
+    plot(t_predict_val, ehat_naive_val)
+    var_ehat_naive__val_norm = var(ehat_naive_val)./var(y_val)
     legend('ehat = y-yhatk', 'naive')
-    plotACFnPACF(ehat, 40, append(int2str(k), '-step prediction'));
-    if(i == 1)
-        var_noise = var(ehat);
-    end
-    mean_ehat = mean(ehat) ;
-    var_theoretical = (norm(Fk).^2) .*var_noise;
-    var_est = var(ehat);
-    conf =0 + [-1 1].*norminv(0.975).*sqrt(var_theoretical);
-    precentage_outside = (sum(ehat > conf(2)) + sum(ehat < conf(1)))./length(ehat);
+
+    % Validation plots
+    figure()
+    subplot(211)
+    plot(t_predict_test,y_test)
+    hold on
+    plot(t_predict_test, yhatk_test)
+    hold on
+    plot(t_predict_test, y_naive_test)
+    title('NVDI: Test')
+    legend('True data', append(int2str(k), '-step prediction'), 'Naive')
+
+    subplot(212)
+    plot(t_predict_test, ehat_test)
+    var_ehat_test_norm = var(ehat_test)./var(y_test)
+    hold on
+    plot(t_predict_test, ehat_naive_test)
+    var_ehat_naive_test_norm = var(ehat_naive_test)./var(y_test)
+    legend('ehat = y-yhatk', 'naive')
 end
-
 %% Examine the data.
- % Extract rain for modelling
-idx_rain_nvdimodel_dates = find(tt==model_t(1)): find(tt==model_t(1)) + length(nvdi_trend) - 1;
+% Extract rain for modelling
+idx_rain_nvdimodel_dates = find(tt==model_t(1)): find(tt==model_t(1)) + length(nvdi_no_trend) - 1;
 x = rain_reconstructed(idx_rain_nvdimodel_dates);
-%x = rain_temp(idx_rain_nvdimodel_dates);
-window = 7;
+figure(); plot(x)
 
-% area = zeros(length(x), 1);
-% xtemp = [zeros(window-1,1); x];
-% for i=1:length(area)
-%     area(i) = sum(xtemp(i:i+window-1));
-% end
-%x = area;
-y = nvdi_trend; 
+y = nvdi_no_trend; 
 % Transform
 x = log(x+1);
 mean_x = mean(x);
-x = (x - mean_x)./30;
+x = (x - mean_x)./20;
 
 % manual inspection
 figure; 
-subplot(311);
+subplot(211);
 plot(x); 
 ylabel('Input signal')
 title('Measured signals')
-
-subplot(312);
-%plot(area)
-subplot(313); 
-plot( y ); 
+subplot(212); 
+plot(t y ); 
 ylabel('Output signal')
 xlabel('Time')
 figure
@@ -426,22 +370,17 @@ plotACFnPACF(x, 100, 'Input Data' );
 
 % Model as ARMA(1,2) component
 data = iddata(x);
-% Am = conv([1 1 1], [1 zeros(1, 35) 1]);%[1 1 1 zeros(1, 33) 1];
-% %Am = [Am zeros(1, 37) 1];
-% Cm = [1 zeros(1, 75) 0.1];%Cm = [1 0 0 1];
 
-%idx = [1 2 7 36 37 38];
-idx = [1 36 37];
-%idx = [1 2 3 36];
+idx = [1 2 12 36 37 38 ];
 arr = zeros(1, idx(end) +1);
 arr(idx +1 ) = 1;
 Am = arr.*0.3;
 Am(1) =1;
 
-idx = [36] ;
+idx = [3 36];
 arr = zeros(1, idx(end) +1);
 arr(idx +1 ) = 1;
-Cm = arr.*0.3;
+Cm = arr.*0.01;
 Cm(1) =1;
 %Cm = [];
 model_init = idpoly(Am, [], Cm) ;
@@ -478,16 +417,17 @@ plot(-M:M, -2/sqrt(n) * ones(1, 2*M+1) , '--' )
 hold off
 
 %%
-d=7; r=0; s=0; 
+d=3; r=0; s=4; 
 A2 = [1 0.01.*ones(1, r)];
+%A2 =[1 0.1 0.1];
 B = [zeros(1,d) 0.1.*ones(1, s+1)];
 %B = [0 0 0 1 0 0 1 1 1 zeros(1,22) 1 1 1 ];
 
+%idx = [3 5 7 9 15 19 33 36];
 idx = [3 5 7 17 31 34];
-%idx = [1 7 28 ];
-%idx = [2 12 20 30];
-%idx = [3 6 15 19 34];
-%idx = [3 5 17 34 79];
+%idx = [3 5 8 17 34];
+% %idx = [3 6 15 19 34];
+% %idx = [3 5 17 34 79];
 
 arr = zeros(1, idx(end) +1);
 arr(idx +1 ) = 0.3;
@@ -495,6 +435,8 @@ B = arr;
 
 Mi = idpoly([1], [B], [], [], [A2]) ;
 Mi.Structure.B.Free = B;
+%Mi.Structure.F.Free = A2;
+
 z = iddata(y, x) ;
 Mba2 = pem(z, Mi ) ;present(Mba2)
 etilde = resid(Mba2, z);
@@ -517,9 +459,11 @@ title('etilde data');
 plotACFnPACF(etilde, M, 'Input Data' );
 
 A2_diff = [1 0 -1];
-Cm = [1 1];%conv([1 zeros(1, 35) 1], A2_diff);
-model_init = idpoly([1 1], [], []) ;
-%model_init.Structure.a.Free = Am;
+Cm = [];%[1 zeros(1, 35) 0.8];
+Am = [1 1];%conv([1 zeros(1, 35) 1], A2_diff);
+%Am = conv([1 zeros(1, 35) 1], [1 1]);
+model_init = idpoly(Am, [], Cm) ;
+model_init.Structure.a.Free = Am;
 %model_init.Structure.c.Free = Cm;
 %model_init = idpoly([1 1 1], [], []) ;
 model_input = pem(iddata(etilde), model_init);
@@ -539,14 +483,16 @@ C2 = model_input.C;
 %% Full BJ Model
 Mi = idpoly(1, B, C2, A1, A2) ;
 Mi.Structure.D.Free = A1;
+%Mi.Structure.F.Free = A2;
 Mi.Structure.B.Free = B;
+%Mi.Structure.C.Free = C2;
 
 z = iddata(y, x);
 MboxJ = pem (z, Mi);
 present (MboxJ );
 
 ehat = resid(MboxJ, z).y;
-ehat = ehat(length(MboxJ): end);
+ehat = ehat(length(MboxJ.B): end);
 
 [acfEst, pacfEst] = plotACFnPACF(ehat, M, 'Box-Jenkins');
 checkIfNormal(acfEst(2:end), 'ACF' );
@@ -554,7 +500,7 @@ checkIfNormal(pacfEst(2:end), 'PACF' );
 checkIfWhite(ehat);
 
 figure()
-[Cxy,lags] = xcorr(ehat, x, M, 'coeff' );
+[Cxy,lags] = xcorr(ehat, x(length(MboxJ.B): end), M, 'coeff' );
 stem(lags, Cxy)
 title ('Cross_correlation_function'), xlabel('Lag')
 hold on
@@ -562,7 +508,13 @@ plot(-M:M, 2/ sqrt(n) * ones(1, 2*M+1), '--')
 plot(-M:M, -2/sqrt(n) * ones(1, 2*M+1) , '--' )
 hold off
 %%
-k =1;
+ut = filter( MboxJ.B, MboxJ.F, x);
+ut = ut(length(MboxJ.B): end);
+var(ut)
+var(y)
+
+%%
+k = 7;
 idx_rain_nvdi_val = find(tt==validation_t(1)): find(tt==validation_t(end)) ;
 idx_rain_nvdi_test = find(tt==test_t(1)): find(tt==test_t(end)) ;
 
@@ -575,8 +527,12 @@ idx_rain_nvdi_test = find(tt==test_t(1)): find(tt==test_t(end)) ;
 % 
 % x_val = area(idx_rain_nvdi_val);
 % x_test = area(idx_rain_nvdi_test) ;
-x_val = (log(rain_reconstructed(idx_rain_nvdi_val) + 1) - mean_x)./30;
-x_test = (log(rain_reconstructed(idx_rain_nvdi_test) + 1) - mean_x)./30;
+x_val = (log(rain_reconstructed(idx_rain_nvdi_val) + 1) - mean_x)./20;
+x_test = (log(rain_reconstructed(idx_rain_nvdi_test) + 1) - mean_x)./20;
+% x_val = (rain_reconstructed(idx_rain_nvdi_val) - mean_x)./300;
+% x_test = (rain_reconstructed(idx_rain_nvdi_test) - mean_x)./300;
+%x_val = (rain_reconstructed(idx_rain_nvdi_val) - mean_x)./200;
+%x_test = (rain_reconstructed(idx_rain_nvdi_test) - mean_x)./200;
 
 x_model_val = cat(1, x, x_val);
 x_model_val_test = cat(1, x, x_val, x_test);
@@ -633,22 +589,12 @@ fprintf( 'The theoretical std of the %i-step prediction error is %4.2f.\n', k, s
 
 %% Form the residual. Is it behaving as expected? Recall, no shift here!
 %ehat = ehat(30:end);
+[acfEst, pacfEst] = plotACFnPACF(ehat_model_val_inp(20:end), 75, 'AR(1)' );
+checkIfNormal(acfEst(2:end), 'ACF' );
+checkIfNormal(pacfEst(2:end), 'PACF' );
+checkIfWhite(ehat_model_val_inp(20:end));
 
-figure
-acf( ehat_val, 40, 0.05, 1 );
-title( sprintf('ACF of the %i-step input prediction residual', k) )
-fprintf('This is a %i-step prediction. Ideally, the residual should be an MA(%i) process.\n', k, k-1)
-checkIfWhite( ehat_val );
-pacfEst = pacf( ehat_val, 40, 0.05 );
-checkIfNormal( pacfEst(k+1:end), 'PACF' );
 
-figure
-acf( ehat_test, 40, 0.05, 1 );
-title( sprintf('ACF of the %i-step input prediction residual', k) )
-fprintf('This is a %i-step prediction. Ideally, the residual should be an MA(%i) process.\n', k, k-1)
-checkIfWhite( ehat_test );
-pacfEst = pacf( ehat_test, 40, 0.05 );
-checkIfNormal( pacfEst(k+1:end), 'PACF' );
 %% Proceed to predict the data using the predicted input.
 % Form the BJ prediction polynomials. In our notation, these are
 %   A1 = foundModel.D
@@ -684,8 +630,14 @@ ehat_model_val = y_model_val - yhatk_model_val + (slope.*t_predict_model_val + i
 
 var_ehat_val = var(ehat_val);
 var_ehat_test = var(ehat_test);
-var_ehat_val_n = var_ehat_val/var(y_val)
-var_ehat_test_n = var_ehat_test/var(y_test)
+var_ehat_val_norm = var_ehat_val/var(y_val)
+var_ehat_test_norm = var_ehat_test/var(y_test)
+
+[acfEst, pacfEst] = plotACFnPACF(ehat_model_val(50:end) - + (slope.*t_predict_model_val(50:end) + intercept), 75, 'AR(1)' );
+checkIfNormal(acfEst(2:end), 'ACF' );
+checkIfNormal(pacfEst(2:end), 'PACF' );
+checkIfWhite(ehat_model_val(50:end) - + (slope.*t_predict_model_val(50:end) + intercept));
+
 
 % A very common error is to forget to add the predicted inputs. Lets try
 % that to see what happens.
@@ -697,13 +649,15 @@ plot(t_predict_val, y_val)
 hold on
 plot(t_predict_val, yhatk_val)
 hold on
-plot(t_predict_val, naive(:,1))
+plot(t_predict_val, naive{1}(:,1))
 legend('y', 'yhatk', 'naive')
 subplot(212)
-plot(t_predict_val, ehat_val.^2);
+plot(t_predict_val, ehat_val);
 hold on
-plot(t_predict_val, naive(:,2).^2)
+plot(t_predict_val, naive{1}(:,2))
 legend('ehat', 'ehat naive')
+title('NVDI: Validation')
+
 
 figure()
 subplot(211)
@@ -711,15 +665,15 @@ plot(t_predict_test, y_test)
 hold on
 plot(t_predict_test, yhatk_test)
 hold on
-%plot(t_predict_test, naive(:,1))
+plot(t_predict_test, naive{2}(:,1))
 legend('y', 'yhatk', 'naive')
 subplot(212)
-plot(t_predict_test, ehat_test.^2);
+plot(t_predict_test, ehat_test);
 hold on
-%plot(t_predict_test, naive(:,2).^2)
+plot(t_predict_test, naive{2}(:,2))
 legend('ehat', 'ehat naive')
+title('NVDI: Test')
 %line( [modelLim modelLim], [-1e6 1e6 ], 'Color','red','LineStyle',':' )
-
 %% Estimate the unknown parameters using a Kalman filter and form the one-step prediction.
 % The ARMAX model is  
 %
@@ -752,9 +706,9 @@ modelLim = 100;
 switch codeVersion
     case 1
         nnz_KB  = find(KB ~= 0);
-        noPar   = length(nnz_KB) + 1+2;                            % The vector of unknowns is [ -KA(2) -KA(3) KB(1) KB(2) KB(3) KC(3) ]
+        noPar   = length(nnz_KB) + 1;                            % The vector of unknowns is [ -KA(2) -KA(3) KB(1) KB(2) KB(3) KC(3) ]
         xt      = zeros(noPar, N);               % Estimated states. Set the initial state to the estimated parameters.
-        xt(:,max(nnz_KB)-1) = [ -KA(2) 0.5 KB(nnz_KB) 0.5 ];
+        xt(:,max(nnz_KB)-1) = [ -KA(2) KB(nnz_KB)];
     case 2
         noPar   = 3;                            % The vector of unknowns is [ -KA(2) -KA(3) KC(3) ]
         xt      = zeros(noPar,N);               % Estimated states. Set the initial state to the estimated parameters.
@@ -766,23 +720,22 @@ switch codeVersion
 end
 %%
 A     = eye(noPar);
-Rw    = std(ehat_model_val).^2;                 % Measurement noise covariance matrix, R_w. Try using the noise estimate from the polynomial prediction.
-Re    = 5e-6*eye(noPar);                        % System noise covariance matrix, R_e.
-Re(2,2)    = 1e-4; 
-Re(noPar,noPar)    = 1e-4; 
-Rx_t1 = 1e-6*eye(noPar);                        % Initial covariance matrix, R_{1|0}^{x,x}
+Rw    = 0.001;%std(ehat_model_val).^3;                 % Measurement noise covariance matrix, R_w. Try using the noise estimate from the polynomial prediction.
+Re    = 1e-7*eye(noPar);                        % System noise covariance matrix, R_e.
+Re(3,3) = 1e-3;Re(4,4) = 1e-3;Re(9,9) = 1e-3;Re(10,10) = 1e-3;
+Rx_t1 = 1e-4*eye(noPar);                        % Initial covariance matrix, R_{1|0}^{x,x}
 Rx_k  = Rx_t1;
 h_et  = zeros(N,1);                             % Estimated one-step prediction error.
 yhatK = zeros(N,1);                             % Estimated output.
+yhatKK = zeros(N,1);
 xStd  = zeros(noPar,N);                         % Stores one std for the one-step prediction.
 startInd = max(nnz_KB);                                   % We use t-2, so start at t=3.
-
 for t=startInd:N
     % Update the predicted state and the time-varying state vector.
     x_t1 = A*xt(:,t-1);                         % x_{t|t-1} = A x_{t-1|t-1}
     switch codeVersion
         case 1                                  % Estimate all parameters.
-            C = [ y(t-1)  y(t-2) x(t - nnz_KB + 1)' h_et(t-1)];
+            C = [ y(t-1) x(t - nnz_KB + 1)'];
             % C = [yhatK_1(t) x(t - nnz_KB + 2)'];--> yhatK_2
             % C = [yhatK_2(t+1) x(t - nnz_KB + 3)']; ---> yhatK_3
             % ----- xhatk
@@ -800,18 +753,18 @@ for t=startInd:N
     Ry = C*Rx_t1*C' + Rw;                       % R_{t|t-1}^{y,y} = C R_{t|t-1}^{x,x} + Rw
     Kt = Rx_t1*C'/Ry;                           % K_t = R^{x,x}_{t|t-1} C^T inv( R_{t|t-1}^{y,y} )
     
-    if isnan( y(t) )
-        xt(:,t) = x_t1;                         % x_{t|t} = x_{t|t-1} 
-        Rx_t    = Rx_t1;                        % R^{x,x}_{t|t} = R^{x,x}_{t|t-1} 
-        y1(t)   = yhatK(t);                      % Replace the missing sample with the estimated value. 
-        t
-    else
-        h_et(t) = y(t)-yhatK(t);                    % One-step prediction error, \hat{e}_t = y_t - \hat{y}_{t|t-1}
-        xt(:,t) = x_t1 + Kt*( h_et(t) );            % x_{t|t}= x_{t|t-1} + K_t ( y_t - Cx_{t|t-1} ) 
-    
-        % Update the covariance matrix estimates.
-        Rx_t  = Rx_t1 - Kt*Ry*Kt';                  % R^{x,x}_{t|t} = R^{x,x}_{t|t-1} - K_t R_{t|t-1}^{y,y} K_t^T
+
+    h_et(t) = y(t)-yhatK(t);                    % One-step prediction error, \hat{e}_t = y_t - \hat{y}_{t|t-1}
+    xt(:,t) = x_t1 + Kt*( h_et(t) );            % x_{t|t}= x_{t|t-1} + K_t ( y_t - Cx_{t|t-1} ) 
+
+    % Update the covariance matrix estimates.
+    Rx_t  = Rx_t1 - Kt*Ry*Kt';                  % R^{x,x}_{t|t} = R^{x,x}_{t|t-1} - K_t R_{t|t-1}^{y,y} K_t^T
+    Ck = [y(t -1 + 1) x(t - nnz_KB + 1 + 1)'];           % C_{t+1|t}
+    yk = Ck*xt(:,t);                            % \hat{y}_{t+1|t} = C_{t+1|t} A x_{t|t}
+    if(t<N)
+        yhatKK(t+1) = yk;
     end
+   
     Rx_t1 = A*Rx_t*A' + Re;                     % R^{x,x}_{t+1|t} = A R^{x,x}_{t|t} A^T + Re
 
     % Estimate a one std confidence interval of the estimated parameters.
@@ -825,9 +778,11 @@ end
 % KA0 = conv( A1, A2 );
 % KB0 = conv( A1, B );
 % KC0 = conv( A2, C1 );
+codeVersion = 1;
+
 switch codeVersion
     case 1
-        trueParams = [ -KA(2) KB(nnz_KB) 0.5];
+        trueParams = [ -KA(2) KB(nnz_KB) ];
     case 2
         trueParams = [ -KA0(2) -KA0(3) KC0(3) ];
     case 3
@@ -846,19 +801,19 @@ for k0=1:length(trueParams)
     fprintf('  True value: %5.2f, estimated value: %5.2f (+/- %5.4f).\n', trueParams(k0), xt(k0,end), xStd(k0,end) )
 end 
 
-yhatK = yhatK + (slope.*t_predict_model_val + intercept);
+yhatKK = yhatKK + (slope.*t_predict_model_val + intercept);
 %% Show the one-step prediction. 
 figure
-plot( [y_model_val yhatK] )
+plot( [y_model_val yhatKK] )
 title('One-step prediction of the validation data')
 xlabel('Time')
 legend('Realisation', 'Kalman estimate', 'Polynomial estimate', 'Location','SW')
 xlim([0 N])
 
 % Form the prediction residuals for the validation data.
-eK = y_model_val(length(model_nvdi)+1:end) - yhatK(length(model_nvdi)+1:end);
+eK = y_model_val(length(model_nvdi)+1:end) - yhatKK(length(model_nvdi)+1:end);
 var(eK)/var(y_model_val(length(model_nvdi)+1:end))
-eK = y(100:end)-yhatK(100:end);
+eK = y(100:end)-yhatKK(100:end);
 %plotACFnPACF( eP, 40, 'One-step prediction using the polynomial estimate');
 plotACFnPACF( eK, 40, 'One-step prediction using the Kalman filter'); %WRONG BECAUSE TREND
 %fprintf('The variance of the validation data is               %7.2f.\n', var(y(modelLim:end)))
@@ -898,7 +853,7 @@ switch codeVersion
         nnz_KB  = find(KB ~= 0);
         noPar   = length(nnz_KB) + 1 ;                            % The vector of unknowns is [ -KA(2) -KA(3) KB(1) KB(2) KB(3) KC(3) ]
         xt      = zeros(noPar, N);               % Estimated states. Set the initial state to the estimated parameters.
-        xt(:,max(nnz_KB)-1) = [ -KA(2) KB(nnz_KB) ];
+        xt(:,max(nnz_KB)-1) = [-KA(2) KB(nnz_KB)];
     case 2
         noPar   = 3;                            % The vector of unknowns is [ -KA(2) -KA(3) KC(3) ]
         xt      = zeros(noPar,N);               % Estimated states. Set the initial state to the estimated parameters.
@@ -910,9 +865,9 @@ switch codeVersion
 end
 %%
 A     = eye(noPar);
-Rw    = std(ehat_model_val).^2;                                % Measurement noise covariance matrix, R_w. Try using the noise estimate from the polynomial prediction.
-Re    = 1e-5*eye(noPar);                        % System noise covariance matrix, R_e.
-Rx_t1 = 1e-5*eye(noPar);                        % Initial covariance matrix, R_{1|0}^{x,x}
+Rw    = 1e-4;%std(ehat_model_val);                                % Measurement noise covariance matrix, R_w. Try using the noise estimate from the polynomial prediction.
+Re    = 1e-6*eye(noPar);                        % System noise covariance matrix, R_e.
+Rx_t1 = 1e-6*eye(noPar);                        % Initial covariance matrix, R_{1|0}^{x,x}
 Rx_k  = Rx_t1;
 h_et  = zeros(N,1);                             % Estimated one-step prediction error.
 yhatK = zeros(N,1);                             % Estimated output.
@@ -925,9 +880,9 @@ A_inp(1, :) = - inputModel.A(2:end);
 A_inp(2: noPar_inp+1:end) = 1;
 
 xt_inp      = zeros(noPar_inp, N);
-Rw_inp    = 1e-1;%std(ehat_model_val_inp);                                % Measurement noise covariance matrix, R_w. Try using the noise estimate from the polynomial prediction.
-Re_inp    = 1e-1*eye(noPar_inp);                        % System noise covariance matrix, R_e.
-Rx_t1_inp = 1e-1*eye(noPar_inp);                        % Initial covariance matrix, R_{1|0}^{x,x}
+Rw_inp    = 1e-3;%std(ehat_model_val_inp);                                % Measurement noise covariance matrix, R_w. Try using the noise estimate from the polynomial prediction.
+Re_inp    = 1e0*eye(noPar_inp);                        % System noise covariance matrix, R_e.
+Rx_t1_inp = 1e0*eye(noPar_inp);                        % Initial covariance matrix, R_{1|0}^{x,x}
 Rx_k_inp  = Rx_t1_inp;
 h_et_inp  = zeros(N,1);                             % Estimated one-step prediction error.
 xhatK_inp = zeros(N,1);                             % Estimated output.
@@ -1077,7 +1032,8 @@ while counter < length(rain_reconstructed) +1
             rain_temp(counter) = rain_reconstructed(counter);
             counter = counter + 1;
         end
-        while(rain_reconstructed(counter)>0)
+        counter = counter + 20;
+        while(counter<length(rain_reconstructed) && rain_reconstructed(counter)>0)
             rain_temp(counter) = 0;
             counter = counter + 1;
         end
@@ -1086,3 +1042,76 @@ while counter < length(rain_reconstructed) +1
     end
 end
 rain_temp = rain_temp';
+%%
+for i=1:2
+    i
+    data = iddata(nvdi_no_trend);
+    Am = conv([1 0.1 0.1], [1 zeros(1, 35), 0.1]);
+    Cm = [1 zeros(1, 35),0.1];
+    model_init = idpoly(Am, [], Cm);
+    model_init.Structure.a.Free = Am;
+    model_init.Structure.c.Free = Cm;
+    model_armax_1 = pem(data , model_init);
+    
+    
+    if(i == 1)
+        % Use the model to handle the outlier, and then re-estimate the model without the outlier
+        noPar = length(model_armax_1.A) - 1;
+        A     = zeros(noPar);
+        A(1, :) = - model_armax_1.A(2:end);
+        A(2: noPar+1:end) = 1;
+        
+        xt      = zeros(noPar, N);
+        Rw    = 1;                              % Measurement noise covariance matrix, R_w. Try using the noise estimate from the polynomial prediction.
+        Re    = 1e1*eye(noPar);                        % System noise covariance matrix, R_e.
+        Rx_t1 = 1e1*eye(noPar);                        % Initial covariance matrix, R_{1|0}^{x,x}
+        h_et  = zeros(N,1);                             % Estimated one-step prediction error.
+        yhatK = zeros(N,1);                             % Estimated output.
+        xStd  = zeros(noPar,N);                         % Stores one std for the one-step prediction.
+        nvdi_no_trend(85:98) = nan;
+        y = nvdi_no_trend;
+        y1 = y;
+        for t=2:N
+            % Input
+            % Update the predicted state and the time-varying state vector.
+            x_t1 = A*xt(:,t-1);                         % x_{t|t-1} = A x_{t-1|t-1}
+            
+            C = [model_armax_1.C zeros(1, noPar - length(model_armax_1.C))];
+            
+            yhatK(t) = C*x_t1;
+        
+            % Update the parameter estimates.
+            Ry = C*Rx_t1*C' + Rw;                       % R_{t|t-1}^{y,y} = C R_{t|t-1}^{x,x} + Rw
+            Kt = Rx_t1*C'/Ry;                           % K_t = R^{x,x}_{t|t-1} C^T inv( R_{t|t-1}^{y,y} )
+            if isnan( y(t) )
+                xt(:,t) = x_t1;                         % x_{t|t} = x_{t|t-1} 
+                Rx_t    = Rx_t1;                        % R^{x,x}_{t|t} = R^{x,x}_{t|t-1} 
+                y1(t)   = yhatK(t);                      % Replace the missing sample with the estimated value. 
+            else 
+                h_et(t) = y(t)-yhatK(t);                    % One-step prediction error, \hat{e}_t = y_t - \hat{y}_{t|t-1}
+                xt(:,t) = x_t1 + Kt*( h_et(t) );            % x_{t|t}= x_{t|t-1} + K_t ( y_t - Cx_{t|t-1} ) 
+            
+                % Update the covariance matrix estimates.
+                Rx_t  = Rx_t1 - Kt*Ry*Kt';                  % R^{x,x}_{t|t} = R^{x,x}_{t|t-1} - K_t R_{t|t-1}^{y,y} K_t^T
+            end
+            Rx_t1 = A*Rx_t*A' + Re;                     % R^{x,x}_{t+1|t} = A R^{x,x}_{t|t} A^T + Re
+        
+            % Estimate a one std confidence interval of the estimated parameters.
+            xStd(:,t) = sqrt( diag(Rx_t) );             % This is one std for each of the parameters for the one-step prediction.
+        end
+        model_nvdi(85:98) = y1(85:98) + (model_t(85:98).*slope + intercept);
+        nvdi_no_trend(85:98) = y1(85:98) ; 
+        nvdi(85:98) = y1(85:98) + (model_t(85:98).*slope + intercept);
+    end
+
+    if(i == 2)
+        e_hat = filter(model_armax_1.A , model_armax_1.C , nvdi_no_trend) ;
+        e_hat = e_hat(length(model_armax_1.A ) : end ) ;
+        
+        present(model_armax_1)
+        [acfEst, pacfEst] = plotACFnPACF(e_hat, 100, 'AR(1)' );
+        checkIfNormal(acfEst(2:end), 'ACF' );
+        checkIfNormal(pacfEst(2:end), 'PACF' );
+        checkIfWhite(e_hat);
+    end
+end
