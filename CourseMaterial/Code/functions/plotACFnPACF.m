@@ -9,16 +9,25 @@
 %   Studentlitteratur, 2021
 %
 function [acfEst, pacfEst] = plotACFnPACF( data, noLags, titleStr, signLvl )
-
+filename = 0;
 % If the fourth argument is not given, set the value to its default.
 if nargin<4
     signLvl = 0.05;
+elseif isstring(signLvl)
+    filename = signLvl;
+    signLvl = 0.05;
 end
 
-figure
+f = figure;
 subplot(211)
 acfEst = acf( data, noLags, signLvl, 1 );
 title( sprintf('ACF (%s)',titleStr))
 subplot(212)
 pacfEst = pacf( data, noLags, signLvl, 1 );
 title( sprintf('PACF (%s)',titleStr))
+
+if isstring(filename)
+    exportgraphics(f, filename);
+end
+
+end
