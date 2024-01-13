@@ -1,3 +1,5 @@
+%% Simulate realization with saved models and add step
+%  check if Kalman adapts.
 %% Generate data from a BJ model
 load BJSIMDAT.mat
 rng(0)
@@ -177,36 +179,11 @@ axis([startInd-1 N -1.5 1.5])
 title(sprintf('Estimated parameters, with Re = %7.6f and Rw = %4.3f', Re(1,1), Rw(1,1)))
 xlabel('Time')
 fprintf('The final values of the Kalman estimated parameters are:\n')
-for k0=1:length(trueParams)
-    fprintf('  True value: %5.2f, estimated value: %5.2f (+/- %5.4f).\n', trueParams_1(k0), xt(k0,end), xStd(k0,end) )
-end 
 
-
-% Show the one-step prediction. 
-%xhatK_inp_4 = xhatK_inp_4(1:end-(k-1));
-figure
-plot( [y_model_val_test yhatk_1 ] )
-title('1-step prediction of the validation data')
-xlabel('Time')
-legend('Realisation', 'Kalman estimate')
-xlim([0 N])
 
 figure
-plot( [y_model_val_test yhatk_7 ] )
+plot( [y_full yhatk_7 ] )
 title('7-step prediction of the validation data')
 xlabel('Time')
 legend('Realisation', 'Kalman estimate')
 xlim([0 N])
-
-ehat_1 = y_model_val_test - yhatk_1;
-ehat_7 = y_model_val_test - yhatk_7;
-% Form the prediction residuals for the validation/test data.
-var_ehat_validation_Kalman_norm = var(ehat_1(idx_validation_nvdi))/var(y_model_val_test(idx_validation_nvdi))
-var_ehat_test_Kalman_norm = var(ehat_1(idx_test_nvdi))/var(y_model_val_test(idx_test_nvdi))
-
-var_ehat_validation_Kalman_norm = var(ehat_7(idx_validation_nvdi))/var(y_model_val_test(idx_validation_nvdi))
-var_ehat_test_Kalman_norm = var(ehat_7(idx_test_nvdi))/var(y_model_val_test(idx_test_nvdi))
-
-%plotACFnPACF( eP, 40, 'One-step prediction using the polynomial estimate');
-plotACFnPACF( ehat_1(150: end), 40, '1-step prediction using the Kalman filter'); 
-plotACFnPACF( ehat_7(150: end), 40, '7-step prediction using the Kalman filter');

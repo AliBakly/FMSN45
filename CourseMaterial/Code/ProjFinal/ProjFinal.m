@@ -1,4 +1,7 @@
 %% FMSN45 PROJECT 2023, By Ali Bakly & Davy Than
+% Note: Code comments might be irrelevant/wrong and copy
+% pasted form lab code etc. They are left for our
+% own understanding o
 %% Clean up and add path
 clear; clc;
 close all;
@@ -195,6 +198,7 @@ plot(model_t, nvdi_no_trend)
  
 %% Ar(1) with (1+a36 z^-36) and C = 36
 nvdi_no_trend_copy(90:100) = nvdi_no_trend(90-36:100-36); % Outlier
+
 figure();
 plot(model_t, nvdi_no_trend_copy,'LineWidth',1.2)
 xlabel('Time')
@@ -292,14 +296,15 @@ for i=1:2
     y_test = y(idx_test_nvdi);
     
     % Validation plots
-    figure()
+    f= figure();
     subplot(211)
     plot(t_predict_val,y_val)
     hold on
     plot(t_predict_val, yhatk_val)
     hold on
     plot(t_predict_val, y_naive_val)
-    title('NVDI: Validation')
+    %title('NVDI: Validation')
+    title(append(int2str(k), "-step predcition of NVDI on validation data."))
     legend('True data', append(int2str(k), '-step prediction'), 'Naive')
 
     subplot(212)
@@ -311,14 +316,15 @@ for i=1:2
     legend('ehat = y-yhatk', 'naive')
 
     % Test plots
-    figure()
+    f = figure();
     subplot(211)
     plot(t_predict_test,y_test)
     hold on
     plot(t_predict_test, yhatk_test)
     hold on
     plot(t_predict_test, y_naive_test)
-    title('NVDI: Test')
+    %title('NVDI: Test')
+    title(append(int2str(k), "-step predcition of NVDI on test data."))
     legend('True data', append(int2str(k), '-step prediction'), 'Naive')
 
     subplot(212)
@@ -328,6 +334,7 @@ for i=1:2
     plot(t_predict_test, ehat_naive_test)
     var_ehat_naive_test_norm = var(ehat_naive_test)./var(y_test)
     legend('ehat = y-yhatk', 'naive')
+
 end
 %% BOX-Jenkins Examine the data.
 % Extract rain for modelling

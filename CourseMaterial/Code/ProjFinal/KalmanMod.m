@@ -1,4 +1,6 @@
-%% Estimate the unknown parameters using a Kalman filter and form the predictions.
+%% Modified time varying BJ model where we add dpenedencies on 
+%  36 in KA and KC. 
+%%
 load BJSIMDAT.mat
 N = length(t_predict_model_val_test);
 y = y_trend_model_val_test;
