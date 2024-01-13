@@ -27,7 +27,7 @@ if nargin<5
     maOrder = 0;
 end
 if nargin<6,
-    includeZeroLag = 1;
+    includeZeroLag = 0;
 end
 if maOrder>maxOrd
     error('ACF: call with maOrder larger than maxOrd.');

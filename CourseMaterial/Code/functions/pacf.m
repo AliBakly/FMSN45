@@ -23,7 +23,7 @@ if (signLvl < 0) || (signLvl>1 )
 end
 signScale = norminv( 1-signLvl/2, 0, 1 );
 if nargin<5
-    includeZeroLag = 1;
+    includeZeroLag = 0;
 end
 
 y = y - mean(y);
