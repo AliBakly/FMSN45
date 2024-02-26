@@ -9,7 +9,8 @@ Solutions to the labs and project of the course FMSN45 in LTH. Some of the topic
 
 
 ## Project
-In particular, you find our solution to the interesting (and rather tough for that matter) project in [FMSN45/CourseMaterial/Code/ProjFinal/](https://github.com/AliBakly/FMSN45/tree/master/CourseMaterial/Code/ProjFinal).
+In particular, you find our solution to the interesting (and rather tough for that matter) project in [Time-Series-Analysis/CourseMaterial/Code/ProjFinal/](https://github.com/AliBakly/FMSN45/tree/master/CourseMaterial/Code/ProjFinal). The final paper can be found [here](https://github.com/AliBakly/Time-Series-Analysis/blob/master/CourseMaterial/Code/ProjFinal/FMSN45_Project_Final.pdf) and most of the 
+code is found [here](https://github.com/AliBakly/Time-Series-Analysis/blob/master/CourseMaterial/Code/ProjFinal/ProjFinal.m).
 
 <p align="center">
   <img src="https://github.com/AliBakly/FMSN45/assets/21970392/df45d339-58e0-4d90-a235-c8ac91c7b494" width="450">
